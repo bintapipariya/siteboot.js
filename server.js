@@ -1,0 +1,716 @@
+/*********************************************
+
+FORTMAX Node.js SERVER
+
+For more projects, visit https://github.com/fantachip/
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+**********************************************/
+
+var Fortmax = function(){
+	
+var http = require("http");
+var https = require("https");
+var fs = require("fs");
+var url = require("url"); 
+var path = require("path");
+var Timers = require("timers"); 
+var JSON = require("JSON");
+var child = require("child_process");
+var events = require('events');
+var walk = require("walk"); 
+var mustache = require('mustache'); 
+var crypto = require("crypto"); 
+var querystring = require("querystring"); 
+var formidable = require("formidable");
+var mysql = require("db-mysql");
+var async = require("async"); 
+
+var config = require("./config").config; 
+
+var server_exports = {} 
+var db = {}
+var widgets = {}
+var pages = {};
+
+new mysql.Database(config.database).connect(function(error) {
+	if (error) {
+		console.log("ERROR CONNECTING TO DATABASE SERVER: " + error);
+	}
+	db = this; 
+
+	main();
+});
+
+var mime_types = {
+	'.html': "text/html",
+	'.css':  "text/css",
+	'.js':   "text/javascript",
+	'.jpg': "image/jpeg",
+	'.jpeg': "image/jpeg",
+	'.png': "image/png"
+};
+
+var BASEDIR = process.cwd()+"/"; 
+var ITEMS_PER_PAGE = 21; 
+
+var forms = {}; 
+var texts = {}; 
+
+var sessions = {}; 
+var theme = {};
+var handlers = {};
+var plugins = {}; 
+
+function LoadTheme(theme, callback){
+	var themebase = BASEDIR+"themes/"+theme+"/";
+	
+	function error(e){
+		console.log("ERROR: could not load theme "+theme+": "+e);
+	}
+
+	fs.exists(themebase, function(exists){
+		if(!exists) {
+			error("Directory does not exist!"); 
+			callback();
+			return; 
+		}
+		try{
+			theme = require(themebase+theme);
+			theme.init(server_exports); 
+		}catch(e){
+			console.log(e); 
+			callback();
+			return; 
+		}
+		
+		async.series([
+			function(callback){
+				console.log("Loading widgets..");
+				LoadScripts(themebase+"/widgets", function(scripts){
+					for(var key in scripts){
+						widgets[key] = scripts[key]; 
+						widgets[key].id = key; 
+					}
+					callback(); 
+				});
+			},
+			function(callback){
+				console.log("Loading theme handlers..."); 
+				LoadScripts(themebase+"/handlers", function(scripts){
+					for(var key in scripts){
+						handlers[key] = scripts[key]; 
+					}
+					callback(); 
+				});
+			},
+			function(callback){
+				console.log("Loading forms..."); 
+				LoadForms(themebase+"/html", function(results){
+					for(var key in results){
+						forms[key] = results[key]; 
+					}
+					callback(); 
+				}); 
+			},
+			function(callback){
+				console.log("Loading pages...");
+				LoadPages(themebase, callback); 
+			}, 
+			function(callback){
+				console.log("Loading plugins..."); 
+				LoadPlugins(themebase, callback); 
+			}
+		], function(){
+			console.log("Loaded all data!"); 
+			callback(); 
+		}); 
+	});
+}
+
+
+function HandlerInitCompleted(hr){
+	// apply the handler to pages
+	if("pages" in hr){
+		console.log("Updating pages for handler: "+hr.name); 
+		for(var key in hr.pages){
+			if(!(hr.pages[key] in pages)){
+				//console.log("Adding new page for "+hr.pages[key]); 
+				pages[hr.pages[key]] = {
+					title: "New Page",
+					content: "New Page",
+					handler: hr.name
+				};
+			}
+			else {
+				//console.log("Updating page handler for page "+hr.pages[key]); 
+				pages[hr.pages[key]].handler = hr.name; 
+			}
+		}
+	}
+}
+
+
+function LoadScripts(dir, callback){
+	fs.readdir(dir, function (err, files) {
+		if (err) {
+			console.log(err);
+			callback(); 
+			return;
+		}
+		var scripts = {}; 
+		for(var key in files){
+			var file = files[key]; 
+			if(!/\.js$/.test(file)) {
+				continue;
+			}
+			try{
+				var script_name = file.replace(/\.[^/.]+$/, "");
+				var hr = require(dir+"/"+file);
+				hr.name = script_name; 
+				hr.init(server_exports, function(){
+					HandlerInitCompleted(hr); 
+				});
+				HandlerInitCompleted(hr); 
+				handlers[script_name] = hr; 
+				scripts[script_name] = hr; 
+				console.log("SCRIPT LOADED: "+script_name);
+			}
+			catch(e){
+				console.log("ERROR: could not load script "+dir+"/"+file+": "+e); 
+				process.exit(); 
+			} 
+		}
+		callback(scripts);
+	});
+}
+
+function LoadPlugins(basedir, callback){
+	widgets_to_load = []; 
+	
+	walk.walk(BASEDIR+"plugins").on("directory", function(root, stat, next){
+		if(fs.existsSync(root+"/"+stat.name+"/init.js")){
+			try{
+				var hr = require(root+"/"+stat.name+"/init");
+				hr.name = stat.name; 
+				server_exports[stat.name] = hr; 
+				hr.init(server_exports, function(){
+					HandlerInitCompleted(hr); 
+				});
+				handlers[stat.name] = hr; 
+				plugins[stat.name] = hr; 
+				widgets_to_load.push(stat.name); 
+				console.log("PLUGIN LOADED: "+stat.name);
+			}
+			catch(e){
+				console.log("ERROR: could not load plugin "+root+"/"+stat.name+": "+e); 
+			} 
+		}
+		next();
+	}).on("end", function(){
+		console.log("Loading widgets for plugins.."); 
+		async.eachSeries(widgets_to_load, function(plugin_name, callback){
+			async.series([
+				function(callback){
+					LoadScripts(BASEDIR+"plugins/"+plugin_name+"/widgets", function(scripts){
+						for(var key in scripts){
+							var w = scripts[key]; 
+							w.id = plugin_name+"_"+key; 
+							widgets[plugin_name+"_"+key] = w;
+							console.log("Loaded widget "+plugin_name+"_"+key); 
+						}
+						callback(); 
+					}); 
+				}, 
+				function(callback){
+					LoadForms(BASEDIR+"plugins/"+plugin_name+"/html", function(results){
+						for(var key in results){
+							forms[plugin_name+"_"+key] = results[key]; 
+							console.log("Loaded form "+plugin_name+"_"+key); 
+						}
+						callback(); 
+					});
+				}
+			], function(err){
+				console.log("Loaded plugin "+plugin_name);
+				callback(); 
+			}); 
+		}, function(){
+			console.log("Loaded plugin widgets!"); 
+			callback();
+		});
+	});
+}
+function LoadPages(base, next){
+	db.query().select(["url", "content", "handler"]).from("fx_page").execute(function(error, rows, cols){
+		if(!rows) {
+			next();
+			return;
+		}
+		
+		for(var row_id in rows){
+			var row = rows[row_id]; 
+			console.log("PAGE: "+row["url"]); 
+			pages[row["url"]] = {
+				title: row["title"]||"",
+				content: row["content"]||"",
+				handler: row["handler"],
+			}
+		}
+		next();
+	});
+}
+function LoadForms(basedir, callback){
+	var walker = walk.walk(basedir); 
+	var forms = {}; 
+	
+	walker.on("file", function(root, stat, next){
+		if(!/\.html$/.test(stat.name)) {
+			next(); 
+			return;
+		}
+		
+		try{
+			var data = fs.readFileSync(root + "/" + stat.name); 
+			var name = stat.name.replace(/\.[^/.]+$/, ""); 
+			forms[name] = String(data); 
+		}
+		catch(e){
+			console.log("ERROR: "+root+"/"+stat.name); 
+		} 
+		next(); 
+	}).on("end", function(){
+		callback(forms); 
+	});
+}
+
+
+function default_handler(){return "Proper server side handler for this page does not exist!";}; 
+
+
+function printCategoryTree(tree){
+	function print_children(cat_tree, indent){
+		if(Object.keys(cat_tree) == 0) return ""; 
+		for(var child in cat_tree){
+			var str = "";
+			for(var c = 0; c < indent; c++){
+				str+=" "; 
+			}
+			str+= child; 
+			console.log(str); 
+			
+			print_children(cat_tree[child], indent + 4); 
+		}
+	}
+	for(var toplevel in tree){
+		console.log(toplevel);
+		print_children(tree[toplevel], 0); 
+	}
+}
+
+function formatHTML(text){
+	var filters = [
+		["([A-ZÄÖÅ][A-ZÄÖÅ0-9\\-\\s]+)\n\n", "<b>$1</b><br/><br/>"], // headings 
+		["\\*(.+?)\\.(.*?)\n", "<li><b>$1</b><br/>$2</li>"], // list items
+		["\\[list\\]\n", "<ul>"],
+		["\\[/list\\]\n", "</ul>"],
+		["(\\-[^\n]*?\\?\n)", "<b><em>$1</em></b>"], // questions
+		["<URL:(.*):(.*)>", "<A HREF=\"$1\">$2</A>"], // links
+		["image\\([\"\']*([^\"\']+)[\"\'\\s]*,[\"\'\\s]*([^\"\']+)[\"\']*\\)", "<img src=\"$1\" style=\"$2\"/>"], // images
+		["\n", "<br/>"],
+	];
+	for(var c in filters){
+		text = text.replace(RegExp(filters[c][0], "g"), filters[c][1]); 
+	}
+	text.replace("\n", "<br/>"); 
+	return text; 
+}
+
+function WidgetValue(widget, args, session){
+	this.session = session; 
+	this.widget = widget; 
+	this.args = args; 
+	
+	var self = this; 
+	
+	return function(){
+		return function(val){ // val is the argument from mustache
+			var name = self.widget.id; 
+			if(val){
+				name = self.widget.id+"_"+val; 
+			}
+			console.log("Getting value for "+name); 
+			if(!(name in self.session.rendered_widgets)){
+				var w = {};
+				for(var key in self.widget)
+					w[key] = self.widget[key];
+				w.id = name; 
+				widgets[name] = w; 
+				console.log("Added copy widget for key "+name); 
+				// call render for the widget
+				//self.widget.render(docpath, self.args, self.session, function(html){
+				//	session.rendered_widgets[name] = html; 
+				//}); 
+				return "Default Text"; 
+			}
+			return self.session.rendered_widgets[name];
+		}
+	};
+}
+
+
+function SessionRenderForm(template, session, args) {
+	var params = {};
+	// add all value retreivers for all currently available widgets
+	for(var key in widgets){
+		params[key] = new WidgetValue(widgets[key], args, session); 
+	}
+	// add args to the options array
+	for(var key in args){
+		params[key] = args[key]; 
+	}
+	return mustache.render(forms[template], params); 
+}
+
+
+function CreateServer(){
+	http.createServer(function(req, res){
+		var current_session = false;
+		
+		function GetCart(){
+			var sess = GetSession(); 
+			
+			if("cart" in sess) return sess["cart"]; 
+			
+			var cart = {
+				order_number: Math.random().toFixed(6)*1000000,
+				items: {}, 
+				address: {
+					first_name: "",
+					last_name: "",
+					company: "",
+					address1: "",
+					address2: "",
+					zip: "",
+					city: "",
+					country: "",
+					state: ""
+				},
+				contact: {
+					phone: "",
+					email: "",
+				},
+				ssn: "",
+				comment: "",
+				payment_method: "",
+				subtotal: 0,
+				tax_total: 0,
+				shipping_total: 0,
+				total: 0,
+				confirmed: false
+			};
+			sess["cart"] = cart; 
+			
+			console.log("GetCart: "+JSON.stringify(sess)); 
+			
+			return cart; 
+		}
+
+		function GetSession(){
+			var cookies = {};
+			
+			if(current_session != false) return current_session; 
+			
+			req.headers.cookie && req.headers.cookie.split(';').forEach(function( cookie ) {
+				var parts = cookie.split('=');
+				cookies[ parts[ 0 ].trim() ] = ( parts[ 1 ] || '' ).trim();
+			});
+			
+			if(!cookies["session"] || cookies["session"] == "" || !(cookies["session"] in sessions)){
+				var sid = String(crypto.createHash("md5").update(String(Math.random())).digest("hex")); 
+				current_session = {
+					sid: sid,
+					render: function(tpl, opts){return SessionRenderForm(tpl, this, opts); }
+				}; 
+				sessions[sid] = current_session; 
+				console.log("SESSION::New : "+current_session.sid); 
+			}
+			else {
+				current_session = sessions[cookies["session"]]; 
+			}
+			return current_session; 
+		}
+
+		var query = url.parse(req.url, true);
+		var docpath = query.pathname;
+		if(query.pathname != "/")
+			docpath = query.pathname.replace("..", ""); 
+		
+		var args = {}
+
+		var filepath = BASEDIR+"content/"+docpath;
+		var form = new formidable.IncomingForm();
+		
+		var cart = GetCart(); 
+		var session = GetSession(); 
+		
+		Object.keys(query.query).map(function(k){args[k] = query.query[k];}); 
+		
+		function ServeRequest(){
+			fs.exists(filepath, function(exists){
+				console.log("GET "+docpath);
+				
+				var headers = {
+					"Content-type": "text/plain"
+				}; 
+				// render all widgets to cache
+				
+				if(docpath == "/" || !exists){
+					var html = "";
+					console.log("Serving "+docpath);
+					// setup a new session only for registered documents
+					if(!(docpath in pages)){
+						pages[docpath] = {
+							title: "test",
+							content: "test",
+							handler: "text"
+						}; 
+					}
+					
+					var session = GetSession(); 
+					if(docpath in pages){
+						// render all widgets and cache the results for later
+						if(!("rendered_widgets" in session))
+							session.rendered_widgets = {}
+						// TODO: this is right now done BEFORE the render function for the main page is called
+						// this means that the main page will at first STILL render the widgets that are left from
+						// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
+						async.eachSeries(Object.keys(widgets), function(i, callback){
+							console.log("Prerendering widget "+i); 
+							args["widget_id"] = i; 
+							widgets[i].render(docpath, args, session, function(html){
+								session.rendered_widgets[i] = html;
+								callback();
+							}); 
+						}, function(){
+							headers["Set-Cookie"] = "session="+session.sid+"; path=/";
+							headers["Content-type"] = "text/html; charset=utf-8"; 
+							headers["Cache-Control"] = "public max-age=120";
+							
+							// process page speciffic params and generate page
+							var handler = {
+								render: function(path, args, session, done){
+									done("Proper server side handler for this page does not exist!")
+								}
+							};
+							if(pages[docpath].handler in handlers){
+								handler = handlers[pages[docpath].handler];
+							}
+							else {
+								console.log("Could not find handler with name "+pages[docpath].handler+" for path "+docpath); 
+							}
+							if("headers" in handler){
+								for(var key in handler.headers){
+									headers[key] = handler.headers[key];
+								} 
+							}
+							
+							handler.render(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
+								function(html){
+									res.writeHead(200, headers); 
+									res.write(html); 
+									res.end(); 
+								}
+							); 
+						});
+					} /*else {
+						console.log("404 not found: "+docpath);
+						headers["Content-type"] = "text/html; charset=utf-8"; 
+						//headers["Location"] = "http://sakradorren.se"; 
+						res.writeHead(404, headers); 
+						res.write(mustache.render(forms["404"], {})); 
+						res.end();
+					}*/
+				}
+				else if(exists){
+					// serve the file
+					fs.readFile(filepath, "binary", function(err, data){
+						
+						if(err) {
+							res.end(); 
+							return; 
+						}
+						
+						headers["Content-type"] = mime_types[path.extname(docpath)]; 
+						headers["Cache-Control"] = "public max-age=120";
+						
+						res.writeHead(200, headers);
+						res.write(data, "binary"); 
+						res.end(); 
+					});
+				}
+				else {
+					res.end(); 
+				}
+			});
+		}
+		// upon a post request we simply process the post data 
+		// and redirect the user to the same page. 
+		if(req.method == "POST"){
+			form.parse(req, function(err, fields, files) {
+				console.log("FORM: "+JSON.stringify(fields)); 
+				
+				Object.keys(fields).map(function(k){args[k] = fields[k]; }); 
+				
+				// submit post to the handler before doing the main render 
+				// NOTE: this is necessary in order to get latest state when rendering!
+				if(pages[docpath].handler in handlers){
+					var handler = handlers[pages[docpath].handler];
+					if("post" in handler){
+						handler.post(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session, function(response){
+							ServeRequest(); 
+						}); 
+					} else {
+						ServeRequest(); 
+					}
+				}
+				else {
+					ServeRequest();
+				}
+			});
+		} else if(req.method == "GET"){
+			ServeRequest(); 
+		}
+		
+	}).listen(8000);
+}
+
+function main(){
+	server_exports.db = db; 
+	server_exports.pages = pages; 
+	server_exports.config = config;
+	server_exports.basedir = BASEDIR; 
+	server_exports.widgets = widgets; 
+	server_exports.handlers = {
+		register: function(class_name, module){
+			if(class_name in handlers){
+				console.log("WARNING: Replacing handler for "+class_name); 
+			}
+			handlers[class_name] = module; 
+			console.log("Registered handler for "+class_name); 
+		}
+	}
+	
+	// setup some default pages
+	pages["/"] = {
+		title: "",
+		content: "",
+		handler: "text"
+	}; 
+	
+	async.series([
+		function(callback){
+			console.log("Loading core forms..."); 
+			LoadForms(BASEDIR+"/html", function(results){
+				for(var key in results){
+					forms[key] = results[key]; 
+					console.log("Loaded form "+key); 
+				}
+				callback(); 
+			}); 
+		},
+		function(callback){
+			console.log("Loading core handlers...");
+			LoadScripts(BASEDIR+"/handlers", function(scripts){
+				for(var key in scripts){
+					handlers[key] = scripts[key]; 
+				}
+				callback(); 
+			});
+		},
+		function(callback){
+			LoadTheme("sakradorren", callback); 
+		},
+	], function(){
+		CreateServer(); 
+		console.log("Server listening...");
+	});
+	
+}
+
+
+// extensions
+pages.get = function(path, done){
+	function return_page(rows){
+		var page = {
+			title: "",
+			content: ""
+		}; 
+		for(var row_id in rows){
+			page[rows[row_id]["property_name"]] = rows[row_id]["property_value"];
+		}
+		var obj = {
+			// gets latest version
+			get: function(done){ 
+				self = this; 
+				try {
+					db.query().select('*').from("fx_properties").where("object_type = 'page' and object_id = ?", [self.url]).execute(function(error, rows, cols){
+						if(!error && rows.length){
+							for(key in rows){
+								self[rows[key]["property_name"]] = rows[key]["property_value"]; 
+							}
+						}
+						done(self, error); 
+					});
+				} catch(e){
+					done(self, error); 
+				}
+			},
+			update: function(values, done){
+				self = this; 
+				/*db.query().update("fx_page").set(values).where("url = ?", [self.url]).execute(function(error){
+					done(error);
+				}); */
+			},
+			remove: function(done){
+				/*delete pages[this.url]; 
+				db.query().delete().from("fx_page").where("url = ?", [this.url]).execute(function(error){
+					done(error);
+				}); */
+			}
+		}
+		for(key in page){
+			obj[key] = page[key]; 
+		}
+		return obj; 
+	}
+	try {
+		db.query().select('*').from("fx_properties").where("object_type = 'page' and object_id = ?", [path]).execute(function(error, rows, cols){
+			if(!error && rows.length){
+				var obj = return_page(rows); 
+				done(error, obj); 
+				return; 
+			}
+			done(error, {}); 
+		});
+	} catch(e){
+		done(e, return_page([])); 
+	}
+}
+
+
+}
+
+Fortmax(); 
+

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+echo "We need to check if you have node installed and install it."
+echo "For this, we need to run as root."
+echo "You will be asked for your sudo password.";
+sudo apt-get install node 
+rm -rf node_modules
+npm install http-server path JSON formidable node-fs url process querystring crypto perf-timers walk mustache csv email-templates nodemailer db-mysql async jquery
