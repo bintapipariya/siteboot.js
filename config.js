@@ -8,6 +8,7 @@ var config = {
 		"database": "db_name"
 	},
 	server_port: 8000,
+	theme: "livesite",
 	klarna: {
 		shop_id: "klarna_eid",
 		secret_key: "klarna_secret",

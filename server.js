@@ -184,10 +184,23 @@ function LoadTheme(theme, callback){
 			return; 
 		}
 		try{
-			theme = require(themebase+theme);
-			theme.init(server_exports); 
+			var module; 
+			if(fs.existsSync(themebase+"/"+theme)){
+				console.log("DEPRECATED: "+theme+".js found in theme directory of "+theme+" - use init.js for theme init script in the future!"); 
+				try {
+					module = require(themebase+"/"+theme); 
+				} catch(e){
+					module = require(themebase+"/init"); 
+				}
+				module.init(server_exports); 
+			} else if(fs.existsSync(themebase+"/init.js")){
+				module = require(themebase+"/init");
+				module.init(server_exports); 
+			} else {
+				throw "init.js script not found in theme directory for theme "+theme; 
+			}
 		}catch(e){
-			console.log(e); 
+			console.log("Could not load theme "+theme+": "+e); 
 			callback();
 			return; 
 		}
@@ -779,7 +792,7 @@ function main(){
 			});
 		},
 		function(callback){
-			LoadTheme("sakradorren", callback); 
+			LoadTheme(config.theme, callback); 
 		},
 	], function(){
 		CreateServer(); 
