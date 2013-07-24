@@ -13,13 +13,14 @@ exports.init = function(ctx){
 
 exports.post = function(path, args, session, done){
 	if(session.user.role != "admin"){
+		console.log("User "+session.user.username+" does not have sufficient permissions to change property value of this property!"); 
 		done("No sufficient permissions to do this!"); 
 		return; 
 	}
  if("set_property_value" in args){
 		if("property_name" in args && "property_value" in args 
 			&& "object_id" in args && "object_type" in args){
-				
+			
 			// first select to see if the value already exists
 			db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]], function(error, rows){
 				if(error){
@@ -35,22 +36,23 @@ exports.post = function(path, args, session, done){
 							done(""); 
 						});
 					return; 
-				}
-				// otherwise do update
-				update(); 
-				function update(){
-					var row = rows[0]; 
-					var values = {};
-					console.log("Updating existing value for property_name "+args["property_name"]); 
-					values["property_value"] = args["property_value"]; 
-					db.query("update fx_properties set property_value = ? where object_type = ? and object_id = ? and property_name = ?", 
-						[args["property_value"], args["object_type"], args["object_id"], args["property_name"]], 
-						function(error){
-						if(error) console.log(error); 
+				} else {
+					// otherwise do update
+					update(); 
+					function update(){
+						var row = rows[0]; 
+						var values = {};
+						console.log("Updating existing value for property_name "+args["property_name"]); 
+						values["property_value"] = args["property_value"]; 
+						db.query("update fx_properties set property_value = ? where object_type = ? and object_id = ? and property_name = ?", 
+							[args["property_value"], args["object_type"], args["object_id"], args["property_name"]], 
+							function(error){
+							if(error) console.log(error); 
+							
+							done("");
+						});
 						
-						done("");
-					});
-					
+					}
 				}
 			});
 		}

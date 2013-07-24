@@ -21,29 +21,8 @@ exports.post = function(path, args, session, callback){
 			return; 
 		}
 		console.log("Attempting to login user "+args["username"]); 
-		server.users.get({username: args["username"]}, function(error, user){
-			if(error){
-				callback("Error: Wrong username or password!"); 
-				console.log(error); 
-				return; 
-			}
-			console.log("Login: user.hash: "+user.hash+", sid: "+session.sid); 
-			if(args["hash"] == crypto.createHash("sha1").update(user.hash+session.sid).digest('hex')){
-				console.log("Successfully logged in user: "+args["username"]);
-				session.user = {
-					username: user.username,
-					role: user.role, 
-					loggedin: true
-				};  
-				callback("Seccess: User logged in!"); 
-				return; 
-			}
-			else {
-				console.log("Error: could not login user "+args["username"]+": passwords do not match!"); 
-				callback("Error: Wrong username or password!"); 
-				return; 
-			}
-			callback("ok"); 
+		server.users.login({username: args["username"], hash: args["hash"]}, function(error, user){
+			console.log("User "+args["username"]+" has successfully logged in!"); 
 		}); 
 	}
 }

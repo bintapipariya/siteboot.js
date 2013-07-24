@@ -45,6 +45,7 @@ var db = {}
 var widgets = {}
 var pages = {};
 var users = {};
+var current_theme = {}; 
 
 db = mysql.createConnection(config.database);
 
@@ -56,6 +57,11 @@ var tables = {
 		property_name: "varchar(255) not null",
 		property_value: "text",
 		"constraint _pk primary key": "(object_type, object_id, property_name)"
+	}, 
+	fx_users: {
+		username: "varchar(255) not null",
+		hash: "varchar(255) not null",
+		role: "varchar(255)"
 	}
 }; 
 
@@ -226,6 +232,8 @@ function LoadTheme(theme, callback){
 			} else if(fs.existsSync(themebase+"/init.js")){
 				module = require(themebase+"/init");
 				module.init(server_exports); 
+				handlers[theme] = module; 
+				current_theme = module; 
 			} else {
 				throw "init.js script not found in theme directory for theme "+theme; 
 			}
@@ -266,6 +274,7 @@ function LoadTheme(theme, callback){
 				console.log("Loading forms..."); 
 				LoadForms(themebase+"/html", function(results){
 					for(var key in results){
+						console.log("Loaded form for "+key); 
 						forms[key] = results[key]; 
 					}
 					callback(); 
@@ -281,6 +290,7 @@ function LoadTheme(theme, callback){
 			}
 		], function(){
 			console.log("Loaded all data!"); 
+			console.log(JSON.stringify(handlers));
 			callback(); 
 		}); 
 	});
@@ -301,7 +311,7 @@ function HandlerInitCompleted(hr){
 				};
 			}
 			else {
-				//console.log("Updating page handler for page "+hr.pages[key]); 
+				console.log("Updating page handler for page "+hr.pages[key]+" to "+hr.name); 
 				pages[hr.pages[key]].handler = hr.name; 
 			}
 		}
@@ -497,12 +507,13 @@ function WidgetValue(widget, args, session){
 			if(val){
 				name = self.widget.id+"_"+val; 
 			}
-			console.log("Getting value for "+name); 
+			console.log("Getting value for "+name+", "+val); 
 			if(!(name in self.session.rendered_widgets)){
 				var w = {};
 				for(var key in self.widget)
 					w[key] = self.widget[key];
 				w.id = name; 
+				w.argument = val; 
 				widgets[name] = w; 
 				console.log("Added copy widget for key "+name); 
 				// call render for the widget
@@ -527,7 +538,11 @@ function SessionRenderForm(template, session, args) {
 	for(var key in args){
 		params[key] = args[key]; 
 	}
-	return mustache.render(forms[template], params); 
+	if(!(template in forms)){
+		return "Form "+template+".html does not exist!";
+	} else {
+		return mustache.render(forms[template], params);
+	} 
 }
 
 
@@ -593,7 +608,7 @@ function CreateServer(){
 				});
 				
 				if(!cookies["session"] || cookies["session"] == "" || !(cookies["session"] in sessions)){
-					var sid = String(crypto.createHash("md5").update(String(Math.random())).digest("hex")); 
+					var sid = String(crypto.createHash("sha1").update(String(Math.random())).digest("hex")); 
 					current_session = {
 						sid: sid,
 						user: users.New(),
@@ -636,17 +651,8 @@ function CreateServer(){
 				if(docpath == "/" || !filepath){
 					var html = "";
 					console.log("Serving "+docpath);
-					// setup a new session only for registered documents
-					if(!(docpath in pages)){
-						pages[docpath] = {
-							title: "test",
-							content: "test",
-							handler: "text"
-						}; 
-					}
-					
+
 					var session = GetSession(); 
-					if(docpath in pages){
 						// render all widgets and cache the results for later
 						if(!("rendered_widgets" in session))
 							session.rendered_widgets = {}
@@ -655,9 +661,10 @@ function CreateServer(){
 						// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
 						async.eachSeries(Object.keys(widgets), function(i, callback){
 							console.log("Prerendering widget "+i); 
-							var new_args = [];
+							var new_args = {};
 							Object.keys(args).map(function(x){new_args[x] = args[x];}); 
-							new_args["widget_id"] = i; 
+							new_args["widget_id"] = widgets[i].id; 
+							new_args["widget_arg"] = widgets[i].argument; 
 							widgets[i].render(docpath, new_args, session, function(html){
 								session.rendered_widgets[i] = html;
 								callback();
@@ -668,24 +675,20 @@ function CreateServer(){
 							headers["Cache-Control"] = "public max-age=120";
 							
 							// process page speciffic params and generate page
-							var handler = {
-								render: function(path, args, session, done){
-									done("Proper server side handler for this page does not exist!")
-								}
-							};
-							if(pages[docpath].handler in handlers){
+							var handler = {}
+							if(docpath in pages && pages[docpath].handler in handlers){
 								handler = handlers[pages[docpath].handler];
 							}
 							else {
-								console.log("Could not find handler with name "+pages[docpath].handler+" for path "+docpath); 
+								console.log("Using default theme handler for rendering the page "+JSON.stringify(theme)); 
+								handler = current_theme; 
 							}
 							if("headers" in handler){
 								for(var key in handler.headers){
 									headers[key] = handler.headers[key];
 								} 
 							}
-							
-							handler.render(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
+							(handler["render"]||handler["get"])(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
 								function(html){
 									res.writeHead(200, headers); 
 									res.write(html); 
@@ -693,7 +696,7 @@ function CreateServer(){
 								}
 							); 
 						});
-					} /*else {
+					 /*else {
 						console.log("404 not found: "+docpath);
 						headers["Content-type"] = "text/html; charset=utf-8"; 
 						//headers["Location"] = "http://sakradorren.se"; 
@@ -789,13 +792,6 @@ function main(){
 			console.log("Registered handler for "+class_name); 
 		}
 	}
-	
-	// setup some default pages
-	pages["/"] = {
-		title: "",
-		content: "",
-		handler: "text"
-	}; 
 	
 	async.series([
 		function(callback){
@@ -903,8 +899,34 @@ users.New = function(){
 	}
 }
 
-users.login = function(user, pass, callback){
-	
+users.login = function(username, hash, session, callback){
+	if(!username || !hash || !session){
+		callback("Need username and sha1 hash and session parameters!"); 
+		return; 
+	}
+	users.get({username: username}, function(error, user){
+		if(error){
+			callback("Error: Wrong username or password!"); 
+			console.log(error); 
+			return; 
+		}
+		console.log("Login: user.hash: "+user.hash+", key: "+session.sid); 
+		if(hash == crypto.createHash("sha1").update(user.hash+session.sid).digest('hex')){
+			session.user = {
+				username: user.username,
+				role: user.role, 
+				loggedin: true
+			};  
+			callback(undefined, user); 
+			return; 
+		}
+		else {
+			console.log("Error: could not login user "+username+": passwords do not match!"); 
+			callback("Error: Wrong username or password!"); 
+			return; 
+		}
+		callback(); 
+	}); 
 };
 
 pages.get = function(path, done){
