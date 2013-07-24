@@ -165,7 +165,17 @@ $(document).ready(function(){
 				property_name: obj.attr("data-property-name")
 			},
 			success: function(data){
-				obj.html(data); 
+				try {
+					var resp = JSON.parse(data); 
+					if(resp.success)
+						obj.html(resp.response); 
+					else {
+						if(!(obj.attr("data-error-policy") === "ignore"))
+							obj.html("<div class='well' style='background-color: #f88;'>"+resp.response+"</div>"); 
+					}
+				} catch(e){
+					//...
+				}
 			}
 		}); 
 	}); 

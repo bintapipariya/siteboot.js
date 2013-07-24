@@ -62,15 +62,35 @@ exports.render = function(path, args, session, done){
 	
 	console.log("Rendering edit_helper page: "+JSON.stringify(args));
 	if("get_property_value" in args){
+		var required = ["object_type", "object_id", "property_name"]; 
+		var missing = Object.keys(args).map(
+			function(x){return required.indexOf(x) >= 0;}).reduce(function(a, b){return !(a||b);}, false);
+		if(missing){
+			required = required.map(function(x){return "'data-"+x.replace("_", "-")+"'";}); 
+			var obj = {
+				success: false, 
+				response: 'Required arguments missing for get_property_value! <br/>Please specify: '+
+					required.slice(0, required.length - 1).join(", ")+" and "+required[required.length - 1]+' of the "editable" html element.'
+			};
+			done(JSON.stringify(obj)); 
+			return; 
+		}
 		db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]], function(error, rows, cols){
 			if(error){
 				console.log(error); 
+			} if(!error && rows && rows.length > 0){
+				var obj = {
+					success: true,  
+					response: rows[0]["property_value"]
+				};
+				done(JSON.stringify(obj)); 
+			} else {
+				var obj = {
+					success: false,
+					response: "No data found for property. "+JSON.stringify(args)
+				}; 
+				done(JSON.stringify(obj)); 
 			}
-			var data = "No data found for this property!"; 
-			if(!error && rows && rows.length > 0){
-				data = rows[0]["property_value"]; 
-			}
-			done(data); 
 		}); 
 	} 
 	/*

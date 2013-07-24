@@ -24,6 +24,17 @@ var config = {
 	}
 }
 
+exports.save = function(){
+	var fs = require('fs');
+	fs.writeFile("config-local.js", "exports.config = "+JSON.stringify(exports.config, null, "\t"), function(err) {
+			if(err) {
+					console.log(err);
+			} else {
+					console.log("Config: New configuration was saved successfully to config-local.js");
+			}
+	}); 
+}
+
 if(fs.existsSync("config-local.js")){
 	try {
 		exports.config = require("./config-local").config;

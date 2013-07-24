@@ -37,7 +37,8 @@ var formidable = require("formidable");
 var mysql = require("mysql");
 var async = require("async"); 
 
-var config = require("./config").config; 
+var cfg = require("./config");
+var config = cfg.config; 
 
 var server_exports = {} 
 var db = {}
@@ -47,25 +48,91 @@ var users = {};
 
 db = mysql.createConnection(config.database);
 
+// initial database tables
+var tables = {
+	fx_properties: {
+		object_type: "varchar (255) not null",
+		object_id: "varchar (255) not null",
+		property_name: "varchar(255) not null",
+		property_value: "text",
+		"constraint _pk primary key": "(object_type, object_id, property_name)"
+	}
+}; 
+
+function CreateTables(callback){
+	var funcs = []; 
+	console.log("Creating missing database tables..."); 
+	async.eachSeries(Object.keys(tables), function(key, callback) {
+		db.query("select * from "+key, function(error){
+			if(error){
+				console.log("Table "+key+" seems to be missing.. will try to create it."); 
+				var table_name = key; 
+				funcs.push(function(callback){
+					var query = Object.keys(tables[table_name]).map(function(x){return x+" "+tables[table_name][x]; }).join(", "); 
+					db.query("create table "+table_name+"("+query+")", function(error){
+						if(error){
+							console.log("An error occured while creating database tables! BAILING OUT! - "+error); 
+							process.exit(); 
+						}
+						callback(); 
+					});
+				}); 
+			}
+			callback(); 
+		});
+	}, function(err){
+		async.series(funcs, function(){
+			console.log("Successfully created database tables!"); 
+			callback(); 
+		}); 
+	});
+	
+}
 function CreateDatabase(callback) {
 	process.stdin.resume();
 	process.stdin.setEncoding('utf8');
 	
-	process.stdout.write("No database configuration found. We must create one. Enter settings below."); 
+	process.stdout.write("No database configuration found. We must create one. Enter settings below.\n"); 
 	
 	var settings = Object.keys(config.database); 
 	var values = {}; 
 	var cur_setting = 0; 
 	
-	process.stdout.write(settings[cur_setting]+": "); 
-	process.stdin.on('data', function (chunk) {
+	var readline = require('readline');
+
+	var rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout,
+		terminal: false
+	});
+	
+	process.stdout.write("Database "+settings[cur_setting]+": "); 
+	rl.on('line', function (cmd) {
 		if(cur_setting < settings.length){
-			values[settings[cur_setting]] = chunk; 
+			values[settings[cur_setting]] = cmd.substr(0, cmd.length - 1); 
 			cur_setting++; 
-			if(cur_setting == settings.length - 1)
-				callback(); 
+			if(cur_setting == settings.length){
+				config.database = values; 
+				
+				db = mysql.createConnection(config.database); 
+				db.connect(function(error){
+					if(error){
+						console.log("ERROR: still can't create a connection! BAILING OUT!");
+						process.exit(); 
+					}
+					else {
+						cfg.save(); 
+						CreateTables(function(){
+							main();
+						}); 
+					}
+				});
+			} else {
+				process.stdout.write("Database "+settings[cur_setting]+": "); 
+			}
 		} 
 	});
+	
 }; 
 
 db.connect(function(error) {
@@ -77,7 +144,9 @@ db.connect(function(error) {
 		//process.exit(); 
 	}
 	else {
-		main();
+		CreateTables(function(){
+			main();
+		}); 
 	}
 });
 
@@ -536,8 +605,10 @@ function CreateServer(){
 							// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
 							async.eachSeries(Object.keys(widgets), function(i, callback){
 								console.log("Prerendering widget "+i); 
-								args["widget_id"] = i; 
-								widgets[i].render(docpath, args, session, function(html){
+								var new_args = [];
+								Object.keys(args).map(function(x){new_args[x] = args[x];}); 
+								new_args["widget_id"] = i; 
+								widgets[i].render(docpath, new_args, session, function(html){
 									session.rendered_widgets[i] = html;
 									callback();
 								}); 
