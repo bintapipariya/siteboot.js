@@ -46,13 +46,39 @@ var pages = {};
 var users = {};
 
 db = mysql.createConnection(config.database);
+
+function CreateDatabase(callback) {
+	process.stdin.resume();
+	process.stdin.setEncoding('utf8');
+	
+	process.stdout.write("No database configuration found. We must create one. Enter settings below."); 
+	
+	var settings = Object.keys(config.database); 
+	var values = {}; 
+	var cur_setting = 0; 
+	
+	process.stdout.write(settings[cur_setting]+": "); 
+	process.stdin.on('data', function (chunk) {
+		if(cur_setting < settings.length){
+			values[settings[cur_setting]] = chunk; 
+			cur_setting++; 
+			if(cur_setting == settings.length - 1)
+				callback(); 
+		} 
+	});
+}; 
+
 db.connect(function(error) {
 	if (error) {
-		console.log("ERROR CONNECTING TO DATABASE SERVER: " + error);
-		process.exit(); 
+		CreateDatabase(function(){
+			main();
+		}); 
+		//console.log("ERROR CONNECTING TO DATABASE SERVER: " + error);
+		//process.exit(); 
 	}
-
-	main();
+	else {
+		main();
+	}
 });
 
 var mime_types = {
