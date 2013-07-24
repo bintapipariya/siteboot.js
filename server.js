@@ -170,6 +170,36 @@ var theme = {};
 var handlers = {};
 var plugins = {}; 
 
+var vfs = new function(){
+	var index = {}; 
+	this.add_index = function(dir, callback){
+		console.log("Indexing directory "+dir); 
+		walk.walk(dir).on("file", function(root, stat, next){
+			var realpath = root+"/"+stat.name; 
+			var path = root.substr(dir.length)+"/"+stat.name;
+			console.log("Adding link "+path+" -> "+realpath); 
+			index[path] = realpath; 
+			next(); 
+		}).on("end", function(){
+			if(callback) callback(); 
+		}); 
+	}
+	this.resolve = function(path){
+		if(path in index){
+			if(fs.existsSync(index[path]))
+				return index[path]; 
+			else {
+				console.log("File does not exist! ("+index[path]+")"); 
+				delete index[path]; 
+				return undefined; 
+			}
+		} else {
+			console.log( "File does not exist: "+path); 
+			return undefined; 
+		}
+	}
+}
+
 function LoadTheme(theme, callback){
 	var themebase = BASEDIR+"themes/"+theme+"/";
 	
@@ -199,13 +229,20 @@ function LoadTheme(theme, callback){
 			} else {
 				throw "init.js script not found in theme directory for theme "+theme; 
 			}
-		}catch(e){
+		} catch(e){
 			console.log("Could not load theme "+theme+": "+e); 
 			callback();
 			return; 
 		}
 		
+		
+		
 		async.series([
+			function(callback){
+				vfs.add_index(themebase+"/content", function(){
+					callback(); 
+				}); 
+			},
 			function(callback){
 				console.log("Loading widgets..");
 				LoadScripts(themebase+"/widgets", function(scripts){
@@ -578,7 +615,6 @@ function CreateServer(){
 			
 			var args = {}
 
-			var filepath = BASEDIR+"content/"+docpath;
 			var form = new formidable.IncomingForm();
 			
 			var cart = GetCart(); 
@@ -591,101 +627,101 @@ function CreateServer(){
 			}; 
 			
 			function ServeRequest(){
-				fs.exists(filepath, function(exists){
-					console.log("GET "+docpath);
-					
-					// render all widgets to cache
-					
-					if(docpath == "/" || !exists){
-						var html = "";
-						console.log("Serving "+docpath);
-						// setup a new session only for registered documents
-						if(!(docpath in pages)){
-							pages[docpath] = {
-								title: "test",
-								content: "test",
-								handler: "text"
-							}; 
-						}
-						
-						var session = GetSession(); 
-						if(docpath in pages){
-							// render all widgets and cache the results for later
-							if(!("rendered_widgets" in session))
-								session.rendered_widgets = {}
-							// TODO: this is right now done BEFORE the render function for the main page is called
-							// this means that the main page will at first STILL render the widgets that are left from
-							// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
-							async.eachSeries(Object.keys(widgets), function(i, callback){
-								console.log("Prerendering widget "+i); 
-								var new_args = [];
-								Object.keys(args).map(function(x){new_args[x] = args[x];}); 
-								new_args["widget_id"] = i; 
-								widgets[i].render(docpath, new_args, session, function(html){
-									session.rendered_widgets[i] = html;
-									callback();
-								}); 
-							}, function(){
-								headers["Set-Cookie"] = "session="+session.sid+"; path=/";
-								headers["Content-type"] = "text/html; charset=utf-8"; 
-								headers["Cache-Control"] = "public max-age=120";
-								
-								// process page speciffic params and generate page
-								var handler = {
-									render: function(path, args, session, done){
-										done("Proper server side handler for this page does not exist!")
-									}
-								};
-								if(pages[docpath].handler in handlers){
-									handler = handlers[pages[docpath].handler];
-								}
-								else {
-									console.log("Could not find handler with name "+pages[docpath].handler+" for path "+docpath); 
-								}
-								if("headers" in handler){
-									for(var key in handler.headers){
-										headers[key] = handler.headers[key];
-									} 
-								}
-								
-								handler.render(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
-									function(html){
-										res.writeHead(200, headers); 
-										res.write(html); 
-										res.end(); 
-									}
-								); 
-							});
-						} /*else {
-							console.log("404 not found: "+docpath);
-							headers["Content-type"] = "text/html; charset=utf-8"; 
-							//headers["Location"] = "http://sakradorren.se"; 
-							res.writeHead(404, headers); 
-							res.write(mustache.render(forms["404"], {})); 
-							res.end();
-						}*/
+				var filepath = vfs.resolve(docpath); 
+				
+				console.log("GET "+docpath);
+				
+				// render all widgets to cache
+				
+				if(docpath == "/" || !filepath){
+					var html = "";
+					console.log("Serving "+docpath);
+					// setup a new session only for registered documents
+					if(!(docpath in pages)){
+						pages[docpath] = {
+							title: "test",
+							content: "test",
+							handler: "text"
+						}; 
 					}
-					else if(exists){
-						// serve the file
-						fs.readFile(filepath, "binary", function(err, data){
-							
-							if(err) {
-								res.end(); 
-								return; 
-							}
-							
-							headers["Content-type"] = mime_types[path.extname(docpath)]; 
+					
+					var session = GetSession(); 
+					if(docpath in pages){
+						// render all widgets and cache the results for later
+						if(!("rendered_widgets" in session))
+							session.rendered_widgets = {}
+						// TODO: this is right now done BEFORE the render function for the main page is called
+						// this means that the main page will at first STILL render the widgets that are left from
+						// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
+						async.eachSeries(Object.keys(widgets), function(i, callback){
+							console.log("Prerendering widget "+i); 
+							var new_args = [];
+							Object.keys(args).map(function(x){new_args[x] = args[x];}); 
+							new_args["widget_id"] = i; 
+							widgets[i].render(docpath, new_args, session, function(html){
+								session.rendered_widgets[i] = html;
+								callback();
+							}); 
+						}, function(){
+							headers["Set-Cookie"] = "session="+session.sid+"; path=/";
+							headers["Content-type"] = "text/html; charset=utf-8"; 
 							headers["Cache-Control"] = "public max-age=120";
 							
-							res.writeHead(200, headers);
-							res.write(data, "binary"); 
-							res.end(); 
+							// process page speciffic params and generate page
+							var handler = {
+								render: function(path, args, session, done){
+									done("Proper server side handler for this page does not exist!")
+								}
+							};
+							if(pages[docpath].handler in handlers){
+								handler = handlers[pages[docpath].handler];
+							}
+							else {
+								console.log("Could not find handler with name "+pages[docpath].handler+" for path "+docpath); 
+							}
+							if("headers" in handler){
+								for(var key in handler.headers){
+									headers[key] = handler.headers[key];
+								} 
+							}
+							
+							handler.render(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
+								function(html){
+									res.writeHead(200, headers); 
+									res.write(html); 
+									res.end(); 
+								}
+							); 
 						});
-					}
-					else {
+					} /*else {
+						console.log("404 not found: "+docpath);
+						headers["Content-type"] = "text/html; charset=utf-8"; 
+						//headers["Location"] = "http://sakradorren.se"; 
+						res.writeHead(404, headers); 
+						res.write(mustache.render(forms["404"], {})); 
+						res.end();
+					}*/
+				}
+				else if(filepath){
+					// serve the file
+					fs.readFile(filepath, "binary", function(err, data){
+						
+						if(err) {
+							res.end(); 
+							return; 
+						}
+						
+						headers["Content-type"] = mime_types[path.extname(docpath)]; 
+						headers["Cache-Control"] = "public max-age=120";
+						
+						res.writeHead(200, headers);
+						res.write(data, "binary"); 
 						res.end(); 
-					}
-				});
+					});
+				}
+				else {
+					res.end(); 
+				}
 			}
 			// upon a post request we simply process the post data 
 			// and redirect the user to the same page. 
@@ -762,6 +798,11 @@ function main(){
 	}; 
 	
 	async.series([
+		function(callback){
+			vfs.add_index("./content", function(){
+				callback(); 
+			}); 
+		},
 		function(callback){
 			console.log("Loading core forms..."); 
 			LoadForms(BASEDIR+"/html", function(results){
