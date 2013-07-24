@@ -34,7 +34,7 @@ var mustache = require('mustache');
 var crypto = require("crypto"); 
 var querystring = require("querystring"); 
 var formidable = require("formidable");
-var mysql = require("db-mysql");
+var mysql = require("mysql");
 var async = require("async"); 
 
 var config = require("./config").config; 
@@ -43,12 +43,14 @@ var server_exports = {}
 var db = {}
 var widgets = {}
 var pages = {};
+var users = {};
 
-new mysql.Database(config.database).connect(function(error) {
+db = mysql.createConnection(config.database);
+db.connect(function(error) {
 	if (error) {
 		console.log("ERROR CONNECTING TO DATABASE SERVER: " + error);
+		process.exit(); 
 	}
-	db = this; 
 
 	main();
 });
@@ -253,7 +255,7 @@ function LoadPlugins(basedir, callback){
 	});
 }
 function LoadPages(base, next){
-	db.query().select(["url", "content", "handler"]).from("fx_page").execute(function(error, rows, cols){
+	db.query("select * from fx_page", function(error, rows){
 		if(!rows) {
 			next();
 			return;
@@ -386,214 +388,243 @@ function SessionRenderForm(template, session, args) {
 
 function CreateServer(){
 	http.createServer(function(req, res){
-		var current_session = false;
-		
-		function GetCart(){
-			var sess = GetSession(); 
+		try {
+			var current_session = false;
 			
-			if("cart" in sess) return sess["cart"]; 
-			
-			var cart = {
-				order_number: Math.random().toFixed(6)*1000000,
-				items: {}, 
-				address: {
-					first_name: "",
-					last_name: "",
-					company: "",
-					address1: "",
-					address2: "",
-					zip: "",
-					city: "",
-					country: "",
-					state: ""
-				},
-				contact: {
-					phone: "",
-					email: "",
-				},
-				ssn: "",
-				comment: "",
-				payment_method: "",
-				subtotal: 0,
-				tax_total: 0,
-				shipping_total: 0,
-				total: 0,
-				confirmed: false
-			};
-			sess["cart"] = cart; 
-			
-			console.log("GetCart: "+JSON.stringify(sess)); 
-			
-			return cart; 
-		}
-
-		function GetSession(){
-			var cookies = {};
-			
-			if(current_session != false) return current_session; 
-			
-			req.headers.cookie && req.headers.cookie.split(';').forEach(function( cookie ) {
-				var parts = cookie.split('=');
-				cookies[ parts[ 0 ].trim() ] = ( parts[ 1 ] || '' ).trim();
-			});
-			
-			if(!cookies["session"] || cookies["session"] == "" || !(cookies["session"] in sessions)){
-				var sid = String(crypto.createHash("md5").update(String(Math.random())).digest("hex")); 
-				current_session = {
-					sid: sid,
-					render: function(tpl, opts){return SessionRenderForm(tpl, this, opts); }
-				}; 
-				sessions[sid] = current_session; 
-				console.log("SESSION::New : "+current_session.sid); 
-			}
-			else {
-				current_session = sessions[cookies["session"]]; 
-			}
-			return current_session; 
-		}
-
-		var query = url.parse(req.url, true);
-		var docpath = query.pathname;
-		if(query.pathname != "/")
-			docpath = query.pathname.replace("..", ""); 
-		
-		var args = {}
-
-		var filepath = BASEDIR+"content/"+docpath;
-		var form = new formidable.IncomingForm();
-		
-		var cart = GetCart(); 
-		var session = GetSession(); 
-		
-		Object.keys(query.query).map(function(k){args[k] = query.query[k];}); 
-		
-		function ServeRequest(){
-			fs.exists(filepath, function(exists){
-				console.log("GET "+docpath);
+			function GetCart(){
+				var sess = GetSession(); 
 				
-				var headers = {
-					"Content-type": "text/plain"
-				}; 
-				// render all widgets to cache
+				if("cart" in sess) return sess["cart"]; 
 				
-				if(docpath == "/" || !exists){
-					var html = "";
-					console.log("Serving "+docpath);
-					// setup a new session only for registered documents
-					if(!(docpath in pages)){
-						pages[docpath] = {
-							title: "test",
-							content: "test",
-							handler: "text"
-						}; 
-					}
-					
-					var session = GetSession(); 
-					if(docpath in pages){
-						// render all widgets and cache the results for later
-						if(!("rendered_widgets" in session))
-							session.rendered_widgets = {}
-						// TODO: this is right now done BEFORE the render function for the main page is called
-						// this means that the main page will at first STILL render the widgets that are left from
-						// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
-						async.eachSeries(Object.keys(widgets), function(i, callback){
-							console.log("Prerendering widget "+i); 
-							args["widget_id"] = i; 
-							widgets[i].render(docpath, args, session, function(html){
-								session.rendered_widgets[i] = html;
-								callback();
-							}); 
-						}, function(){
-							headers["Set-Cookie"] = "session="+session.sid+"; path=/";
-							headers["Content-type"] = "text/html; charset=utf-8"; 
-							headers["Cache-Control"] = "public max-age=120";
-							
-							// process page speciffic params and generate page
-							var handler = {
-								render: function(path, args, session, done){
-									done("Proper server side handler for this page does not exist!")
-								}
-							};
-							if(pages[docpath].handler in handlers){
-								handler = handlers[pages[docpath].handler];
-							}
-							else {
-								console.log("Could not find handler with name "+pages[docpath].handler+" for path "+docpath); 
-							}
-							if("headers" in handler){
-								for(var key in handler.headers){
-									headers[key] = handler.headers[key];
-								} 
-							}
-							
-							handler.render(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
-								function(html){
-									res.writeHead(200, headers); 
-									res.write(html); 
-									res.end(); 
-								}
-							); 
-						});
-					} /*else {
-						console.log("404 not found: "+docpath);
-						headers["Content-type"] = "text/html; charset=utf-8"; 
-						//headers["Location"] = "http://sakradorren.se"; 
-						res.writeHead(404, headers); 
-						res.write(mustache.render(forms["404"], {})); 
-						res.end();
-					}*/
+				function new_cart(){
+					return {
+						order_number: Math.random().toFixed(6)*1000000,
+						items: {}, 
+						address: {
+							first_name: "",
+							last_name: "",
+							company: "",
+							address1: "",
+							address2: "",
+							zip: "",
+							city: "",
+							country: "",
+							state: ""
+						},
+						contact: {
+							phone: "",
+							email: "",
+						},
+						ssn: "",
+						comment: "",
+						payment_method: "",
+						subtotal: 0,
+						tax_total: 0,
+						shipping_total: 0,
+						total: 0,
+						submitted: false,
+						paid: false,
+						payment_redirect_form: false,
+						confirmed: false,
+						New: new_cart,
+					};
 				}
-				else if(exists){
-					// serve the file
-					fs.readFile(filepath, "binary", function(err, data){
-						
-						if(err) {
-							res.end(); 
-							return; 
-						}
-						
-						headers["Content-type"] = mime_types[path.extname(docpath)]; 
-						headers["Cache-Control"] = "public max-age=120";
-						
-						res.writeHead(200, headers);
-						res.write(data, "binary"); 
-						res.end(); 
-					});
+				sess["cart"] = new_cart(); 
+				sess["cart"].New = new_cart; 
+				
+				console.log("GetCart: "+JSON.stringify(sess)); 
+				
+				return cart; 
+			}
+
+			function GetSession(){
+				var cookies = {};
+				
+				if(current_session != false) return current_session; 
+				
+				req.headers.cookie && req.headers.cookie.split(';').forEach(function( cookie ) {
+					var parts = cookie.split('=');
+					cookies[ parts[ 0 ].trim() ] = ( parts[ 1 ] || '' ).trim();
+				});
+				
+				if(!cookies["session"] || cookies["session"] == "" || !(cookies["session"] in sessions)){
+					var sid = String(crypto.createHash("md5").update(String(Math.random())).digest("hex")); 
+					current_session = {
+						sid: sid,
+						user: users.New(),
+						render: function(tpl, opts){return SessionRenderForm(tpl, this, opts); }
+					}; 
+					sessions[sid] = current_session; 
+					console.log("SESSION::New : "+current_session.sid); 
 				}
 				else {
-					res.end(); 
+					current_session = sessions[cookies["session"]]; 
 				}
-			});
-		}
-		// upon a post request we simply process the post data 
-		// and redirect the user to the same page. 
-		if(req.method == "POST"){
-			form.parse(req, function(err, fields, files) {
-				console.log("FORM: "+JSON.stringify(fields)); 
-				
-				Object.keys(fields).map(function(k){args[k] = fields[k]; }); 
-				
-				// submit post to the handler before doing the main render 
-				// NOTE: this is necessary in order to get latest state when rendering!
-				if(pages[docpath].handler in handlers){
-					var handler = handlers[pages[docpath].handler];
-					if("post" in handler){
-						handler.post(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session, function(response){
+				return current_session; 
+			}
+
+			var query = url.parse(req.url, true);
+			var docpath = query.pathname;
+			if(query.pathname != "/")
+				docpath = query.pathname.replace("..", ""); 
+			
+			var args = {}
+
+			var filepath = BASEDIR+"content/"+docpath;
+			var form = new formidable.IncomingForm();
+			
+			var cart = GetCart(); 
+			var session = GetSession(); 
+			
+			Object.keys(query.query).map(function(k){args[k] = query.query[k];}); 
+			
+			var headers = {
+				"Content-type": "text/plain"
+			}; 
+			
+			function ServeRequest(){
+				fs.exists(filepath, function(exists){
+					console.log("GET "+docpath);
+					
+					// render all widgets to cache
+					
+					if(docpath == "/" || !exists){
+						var html = "";
+						console.log("Serving "+docpath);
+						// setup a new session only for registered documents
+						if(!(docpath in pages)){
+							pages[docpath] = {
+								title: "test",
+								content: "test",
+								handler: "text"
+							}; 
+						}
+						
+						var session = GetSession(); 
+						if(docpath in pages){
+							// render all widgets and cache the results for later
+							if(!("rendered_widgets" in session))
+								session.rendered_widgets = {}
+							// TODO: this is right now done BEFORE the render function for the main page is called
+							// this means that the main page will at first STILL render the widgets that are left from
+							// "previous" state. Perhaps we can handle post to the current handler BEFORE calling render?
+							async.eachSeries(Object.keys(widgets), function(i, callback){
+								console.log("Prerendering widget "+i); 
+								args["widget_id"] = i; 
+								widgets[i].render(docpath, args, session, function(html){
+									session.rendered_widgets[i] = html;
+									callback();
+								}); 
+							}, function(){
+								headers["Set-Cookie"] = "session="+session.sid+"; path=/";
+								headers["Content-type"] = "text/html; charset=utf-8"; 
+								headers["Cache-Control"] = "public max-age=120";
+								
+								// process page speciffic params and generate page
+								var handler = {
+									render: function(path, args, session, done){
+										done("Proper server side handler for this page does not exist!")
+									}
+								};
+								if(pages[docpath].handler in handlers){
+									handler = handlers[pages[docpath].handler];
+								}
+								else {
+									console.log("Could not find handler with name "+pages[docpath].handler+" for path "+docpath); 
+								}
+								if("headers" in handler){
+									for(var key in handler.headers){
+										headers[key] = handler.headers[key];
+									} 
+								}
+								
+								handler.render(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session,
+									function(html){
+										res.writeHead(200, headers); 
+										res.write(html); 
+										res.end(); 
+									}
+								); 
+							});
+						} /*else {
+							console.log("404 not found: "+docpath);
+							headers["Content-type"] = "text/html; charset=utf-8"; 
+							//headers["Location"] = "http://sakradorren.se"; 
+							res.writeHead(404, headers); 
+							res.write(mustache.render(forms["404"], {})); 
+							res.end();
+						}*/
+					}
+					else if(exists){
+						// serve the file
+						fs.readFile(filepath, "binary", function(err, data){
+							
+							if(err) {
+								res.end(); 
+								return; 
+							}
+							
+							headers["Content-type"] = mime_types[path.extname(docpath)]; 
+							headers["Cache-Control"] = "public max-age=120";
+							
+							res.writeHead(200, headers);
+							res.write(data, "binary"); 
+							res.end(); 
+						});
+					}
+					else {
+						res.end(); 
+					}
+				});
+			}
+			// upon a post request we simply process the post data 
+			// and redirect the user to the same page. 
+			if(req.method == "POST"){
+				form.parse(req, function(err, fields, files) {
+					console.log("FORM: "+docpath+" > "+JSON.stringify(fields)); 
+					
+					if(!(docpath in pages)){
+						console.log("Error: could not post data - no page is associated with "+docpath+"!");
+						res.end(); 
+						return; 
+					}
+					
+					Object.keys(fields).map(function(k){args[k] = fields[k]; }); 
+					
+					// submit post to the handler before doing the main render 
+					// NOTE: this is necessary in order to get latest state when rendering!
+					//headers["Location"] = docpath;
+					res.writeHead(200, headers);
+					var success = false; 
+					if(pages[docpath].handler in handlers){
+						var handler = handlers[pages[docpath].handler];
+						if("post" in handler){
+							handler.post(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session, function(response){
+								if(response) {
+									res.writeHead(200, headers); 
+									res.write(response); 
+									res.end(); 
+								} else {
+									ServeRequest(); 
+								}
+							}); 
+						} else {
 							ServeRequest(); 
-						}); 
+						}
 					} else {
 						ServeRequest(); 
 					}
-				}
-				else {
-					ServeRequest();
-				}
-			});
-		} else if(req.method == "GET"){
-			ServeRequest(); 
+				});
+			} else if(req.method == "GET"){
+				ServeRequest(); 
+			}
+		} catch(e) { // prevent server crash
+			console.log("FATAL ERROR WHEN SERVING CLIENT "+path+", session: "+JSON.stringify(session)); 
+			res.writeHead(200, {}); 
+			res.write("Fatal server error occured. Please go to home page."); 
+			res.end(); 
 		}
-		
-	}).listen(8000);
+	}).listen(config.server_port);
 }
 
 function main(){
@@ -602,6 +633,7 @@ function main(){
 	server_exports.config = config;
 	server_exports.basedir = BASEDIR; 
 	server_exports.widgets = widgets; 
+	server_exports.users = users; 
 	server_exports.handlers = {
 		register: function(class_name, module){
 			if(class_name in handlers){
@@ -640,6 +672,16 @@ function main(){
 			});
 		},
 		function(callback){
+			console.log("Loading core widgets...");
+			LoadScripts(BASEDIR+"/widgets", function(scripts){
+				for(var key in scripts){
+					widgets[key] = scripts[key]; 
+					widgets[key].id = key; 
+				}
+				callback(); 
+			});
+		},
+		function(callback){
 			LoadTheme("sakradorren", callback); 
 		},
 	], function(){
@@ -651,6 +693,69 @@ function main(){
 
 
 // extensions
+users.create = function(user, callback){
+	users.get(user, function(error, user){
+		if(!error){
+			callback("CreateUser: User already exist!"); 
+			return; 
+		}
+		
+	}); 
+}
+
+users.get = function(params, callback){
+	try {
+		db.query("select * from fx_users where "+
+			Object.keys(params).map(function(x){return x+" = ?";}).join(" and "), 
+			Object.keys(params).map(function(x){return params[x];}), function(error, rows){
+			
+			if(error){
+				console.log("SQL ERROR in users.get(): "+error); 
+				callback(error); 
+				return; 
+			}
+			if(!rows || rows.length != 1){
+				callback("GetUser: could not get user with params "+JSON.stringify(params)); 
+				return; 
+			}
+			var row = rows[0]; 
+			var us = undefined; 
+			async.series([
+				function(next){
+					//sessions.find({username: row.username}, callback);
+					next();
+				},
+				function(next){
+					var user = {
+						username: row.username,
+						hash: row.hash,
+						role: row.role, 
+						is_loggedin: ((us)?true:false),
+					}; 
+					callback(undefined, user); 
+					next(); 
+				}],
+				function(next){
+					// done 
+				}
+			); 
+		}); 
+	} catch(e) {
+		callback(e); 
+	}
+}
+
+users.New = function(){
+	return {
+		username: "",
+		loggedin: false
+	}
+}
+
+users.login = function(user, pass, callback){
+	
+};
+
 pages.get = function(path, done){
 	function return_page(rows){
 		var page = {
@@ -665,7 +770,7 @@ pages.get = function(path, done){
 			get: function(done){ 
 				self = this; 
 				try {
-					db.query().select('*').from("fx_properties").where("object_type = 'page' and object_id = ?", [self.url]).execute(function(error, rows, cols){
+					db.query("select * from fx_properties where object_type = 'page' and object_id = ?", [self.url], function(error, rows, cols){
 						if(!error && rows.length){
 							for(key in rows){
 								self[rows[key]["property_name"]] = rows[key]["property_value"]; 
@@ -679,15 +784,9 @@ pages.get = function(path, done){
 			},
 			update: function(values, done){
 				self = this; 
-				/*db.query().update("fx_page").set(values).where("url = ?", [self.url]).execute(function(error){
-					done(error);
-				}); */
 			},
 			remove: function(done){
-				/*delete pages[this.url]; 
-				db.query().delete().from("fx_page").where("url = ?", [this.url]).execute(function(error){
-					done(error);
-				}); */
+				
 			}
 		}
 		for(key in page){
@@ -696,7 +795,7 @@ pages.get = function(path, done){
 		return obj; 
 	}
 	try {
-		db.query().select('*').from("fx_properties").where("object_type = 'page' and object_id = ?", [path]).execute(function(error, rows, cols){
+		db.query("select * from fx_properties where object_type = 'page' and object_id = ?", [path], function(error, rows){
 			if(!error && rows.length){
 				var obj = return_page(rows); 
 				done(error, obj); 

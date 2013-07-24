@@ -66,5 +66,13 @@ exports.init = function(ctx){
 }
 
 exports.render = function(path, args, session, done){
-	done(scripts); 
+	// output relevant session variables to the browser 
+	// (we don't want to output everything because some stuff is meant for the server only) 
+	var sscripts = "var livesite_session = "+
+		JSON.stringify({
+			sid: session.sid,
+			cart: session.cart,
+			user: session.user
+		})+";\n\n";
+	done(sscripts+scripts); 
 }

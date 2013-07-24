@@ -7,15 +7,21 @@ var config = {
 		"password": "db_password",
 		"database": "db_name"
 	},
-	klarna_eid: "klarna_eid",
-	klarna_secret: "klarna_secret",
-	
-	paypal_url: "paypal_webscr_url",
-	
-	payson_url: "payson_merchant_url",
-	payson_id: "payson_id",
-	payson_seller_email: "payson_seller_email", 
-	payson_key: "payson_key"
+	server_port: 8000,
+	klarna: {
+		shop_id: "klarna_eid",
+		secret_key: "klarna_secret",
+	},
+	paypal: {
+		checkout_url: "paypal_webscr_url",
+		seller_email: "payson_seller_email"
+	},
+	payson: {
+		checkout_url: "payson_merchant_url",
+		seller_email: "seller email",
+		agent_id: "payson_id",
+		secret_key: "payson_key"
+	}
 }
 
 if(fs.existsSync("config-local.js")){

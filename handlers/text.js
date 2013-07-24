@@ -27,8 +27,9 @@ exports.render = function(path, args, session, done){
 				title: j(page.title).text(),
 				head: "",
 				content: session.render("main_page", {
-					content: 	"<h2>"+Editable({type: "page", id: path, name: "title", value: page.title})+"</h2>"+
-										Editable({type: "page", id: path, name: "content", value: page.content})
+					/*content: 	"<h2>"+Editable({type: "page", id: path, name: "title", value: page.title})+"</h2>"+
+										Editable({type: "page", id: path, name: "content", value: page.content})*/
+					content: Editable({type: "page", id: path, name: "content", value: page.content}),
 				}), 
 		});
 		if(error) {
