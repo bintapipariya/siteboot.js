@@ -1,4 +1,6 @@
 var mustache = require("mustache");
+var PATH = require("path"); 
+var fs = require("fs"); 
 
 var db = {}; 
 var templates = {};
@@ -11,13 +13,67 @@ exports.init = function(ctx){
 	exports.pages = ["/edit_helper"]; 
 }
 
-exports.post = function(path, args, session, done){
+fs.copy = function(source, target, cb) {
+  var cbCalled = false;
+
+  var rd = fs.createReadStream(source);
+  rd.on("error", function(err) {
+    done(err);
+  });
+  var wr = fs.createWriteStream(target);
+  wr.on("error", function(err) {
+    done(err);
+  });
+  wr.on("close", function(ex) {
+    done();
+  });
+  rd.pipe(wr);
+
+  function done(err) {
+    if (!cbCalled) {
+      cb(err);
+      cbCalled = true;
+    }
+  }
+}
+
+exports.post = function(path, args, session, callback){
+	var cbCalled = false; 
+	console.log("EDIT HELPER: POST: "+JSON.stringify(args)); 
+	
 	if(session.user.role != "admin"){
 		console.log("User "+session.user.username+" does not have sufficient permissions to change property value of this property!"); 
 		done("No sufficient permissions to do this!"); 
 		return; 
 	}
- if("set_property_value" in args){
+	if("remove_file" in args){
+		if("target" in args){
+			var local_path = server.vfs.resolve(args["target"], function(err){
+				if(err) console.log(err); 
+			});
+			if(local_path){
+				console.log("Removing file "+local_path); 
+				fs.unlink(local_path); 
+			}; 
+		}
+	} else if("file_upload" in args){
+		if("uploaded_file" in args && "target" in args){
+			var file = args["uploaded_file"]; 
+			var target = args["target"]; 
+			var basename = PATH.basename(target); 
+			var local_path = server.vfs.resolve(PATH.dirname(target));
+			if(local_path){
+				local_path = local_path+"/"+basename; 
+				console.log("Will overwrite local file "+local_path); 
+				fs.copy(file.path, local_path, function(){
+					console.log("File was successfully saved!"); 
+					server.vfs.add_index(PATH.basename(local_path)); 
+					done(); 
+				}); 
+			}; 
+		}
+		done(); 
+	} else if("set_property_value" in args){
 		if("property_name" in args && "property_value" in args 
 			&& "object_id" in args && "object_type" in args){
 			
@@ -57,6 +113,13 @@ exports.post = function(path, args, session, done){
 			});
 		}
 	}
+	function done(err) {
+    if (!cbCalled) {
+      callback(err);
+      cbCalled = true;
+    }
+  }
+  done(); 
 }
 
 exports.render = function(path, args, session, done){ 

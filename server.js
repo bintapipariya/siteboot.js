@@ -36,6 +36,9 @@ var querystring = require("querystring");
 var formidable = require("formidable");
 var mysql = require("mysql");
 var async = require("async"); 
+var multipart = require("multipart");
+var sys = require("sys");
+var posix = require("posix");
 
 var cfg = require("./config");
 var config = cfg.config; 
@@ -180,28 +183,54 @@ var vfs = new function(){
 	var index = {}; 
 	this.add_index = function(dir, callback){
 		console.log("Indexing directory "+dir); 
-		walk.walk(dir).on("file", function(root, stat, next){
+		var addtoindex = function(root, stat, next){
 			var realpath = root+"/"+stat.name; 
 			var path = root.substr(dir.length)+"/"+stat.name;
 			console.log("Adding link "+path+" -> "+realpath); 
 			index[path] = realpath; 
 			next(); 
-		}).on("end", function(){
+		}
+		walk.walk(dir)
+		.on("file", addtoindex)
+		.on("directory", addtoindex)
+		.on("end", function(){
 			if(callback) callback(); 
 		}); 
 	}
-	this.resolve = function(path){
+	this.search = function(wildcard, callback){
+		var rx = RegExp(wildcard.replace("*", ".*?"), "gi"); 
+		var keys = Object.keys(index); 
+		
+		// fast asynchronous filter
+		async.filter(keys, function(key, callback){
+			var match = rx.test(key); 
+			if(match){
+				console.log("Found matching file "+key+" for "+wildcard); 
+			}
+			callback(match);
+		}, function(results){
+			callback(undefined, results); 
+		});
+	}
+	
+	this.resolve = function(path, callback){
 		if(path in index){
-			if(fs.existsSync(index[path]))
+			if(fs.existsSync(index[path])){
+				done(undefined, index[path]); 
 				return index[path]; 
+			}
 			else {
-				console.log("File does not exist! ("+index[path]+")"); 
+				done("File does not exist! ("+path+")"); 
 				delete index[path]; 
 				return undefined; 
 			}
 		} else {
-			console.log( "File does not exist: "+path); 
+			done( "File does not exist: "+path); 
+			
 			return undefined; 
+		}
+		function done(err){
+			if(callback) callback(err);
 		}
 	}
 }
@@ -283,10 +312,6 @@ function LoadTheme(theme, callback){
 			function(callback){
 				console.log("Loading pages...");
 				LoadPages(themebase, callback); 
-			}, 
-			function(callback){
-				console.log("Loading plugins..."); 
-				LoadPlugins(themebase, callback); 
 			}
 		], function(){
 			console.log("Loaded all data!"); 
@@ -356,7 +381,7 @@ function LoadScripts(dir, callback){
 function LoadPlugins(basedir, callback){
 	widgets_to_load = []; 
 	
-	walk.walk(BASEDIR+"plugins").on("directory", function(root, stat, next){
+	walk.walk(basedir+"plugins").on("directory", function(root, stat, next){
 		if(fs.existsSync(root+"/"+stat.name+"/init.js")){
 			try{
 				var hr = require(root+"/"+stat.name+"/init");
@@ -368,6 +393,7 @@ function LoadPlugins(basedir, callback){
 				handlers[stat.name] = hr; 
 				plugins[stat.name] = hr; 
 				widgets_to_load.push(stat.name); 
+				vfs.add_index(root+"/"+stat.name+"/content"); 
 				console.log("PLUGIN LOADED: "+stat.name);
 			}
 			catch(e){
@@ -730,14 +756,12 @@ function CreateServer(){
 			// and redirect the user to the same page. 
 			if(req.method == "POST"){
 				form.parse(req, function(err, fields, files) {
-					console.log("FORM: "+docpath+" > "+JSON.stringify(fields)); 
+					console.log("FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
 					
-					if(!(docpath in pages)){
-						console.log("Error: could not post data - no page is associated with "+docpath+"!");
-						res.end(); 
-						return; 
-					}
-					
+					// TODO: do we need to update the signature of all handlers to accomodate for uploaded files or is this ok?
+					if(Object.keys(files).length)
+						args["uploaded_file"] = files["file"]; 
+						
 					Object.keys(fields).map(function(k){args[k] = fields[k]; }); 
 					
 					// submit post to the handler before doing the main render 
@@ -745,21 +769,19 @@ function CreateServer(){
 					//headers["Location"] = docpath;
 					res.writeHead(200, headers);
 					var success = false; 
-					if(pages[docpath].handler in handlers){
-						var handler = handlers[pages[docpath].handler];
-						if("post" in handler){
-							handler.post(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session, function(response){
-								if(response) {
-									res.writeHead(200, headers); 
-									res.write(response); 
-									res.end(); 
-								} else {
-									ServeRequest(); 
-								}
-							}); 
-						} else {
-							ServeRequest(); 
-						}
+					
+					var handler = {};
+					if((docpath in pages) && (pages[docpath].handler in handlers)){
+						handler = handlers[pages[docpath].handler];
+					} else {
+						handler = current_theme; 
+					}
+					if("post" in handler){
+						handler.post(docpath.replace(/\/+$/, "").replace(/^\/+/, ""), args, session, function(response){
+							res.writeHead(200, headers); 
+							if(response) res.write(response); 
+							res.end(); 
+						}); 
 					} else {
 						ServeRequest(); 
 					}
@@ -768,7 +790,7 @@ function CreateServer(){
 				ServeRequest(); 
 			}
 		} catch(e) { // prevent server crash
-			console.log("FATAL ERROR WHEN SERVING CLIENT "+path+", session: "+JSON.stringify(session)); 
+			console.log("FATAL ERROR WHEN SERVING CLIENT "+path+", session: "+JSON.stringify(session)+": "+e+"\n"+e.stack); 
 			res.writeHead(200, {}); 
 			res.write("Fatal server error occured. Please go to home page."); 
 			res.end(); 
@@ -782,6 +804,7 @@ function main(){
 	server_exports.config = config;
 	server_exports.basedir = BASEDIR; 
 	server_exports.widgets = widgets; 
+	server_exports.vfs = vfs; 
 	server_exports.users = users; 
 	server_exports.handlers = {
 		register: function(class_name, module){
@@ -827,6 +850,10 @@ function main(){
 				}
 				callback(); 
 			});
+		},
+		function(callback){
+			console.log("Loading plugins..."); 
+			LoadPlugins(BASEDIR, callback); 
 		},
 		function(callback){
 			LoadTheme(config.theme, callback); 
