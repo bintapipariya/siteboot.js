@@ -1,0 +1,29 @@
+<div style="position: relative;">
+	<div id="{{object_id}}" class="hero-unit editable-hero" data-image="{{background}}" style="background-image: url('{{background}}');">
+		<div class="editable" data-object-type="widget" 
+			data-object-id="editable_hero{{object_id}}" data-property-name="content" data-error-policy="ignore">
+			{{{content}}}
+		</div>
+	</div>
+	<!-- Button to trigger modal -->
+	<a href="#editable_hero_dialog_{{object_id}}" style="position: absolute; right: 0; top: 0;" role="button" class="btn" data-toggle="modal">Byt backgrund</a>
+</div>
+
+ 
+<!-- Modal -->
+<div id="editable_hero_dialog_{{object_id}}" data-hero-id="{{object_id}}" class="editable-hero-upload-dialog modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+	<form action="/" method="post" enctype="multipart/form-data">
+		<div class="modal-header">
+			<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+			<h3 id="myModalLabel">Ladda upp backgrundsbild</h3>
+		</div>
+		<div class="modal-body">
+			<p>Välj bild som du vill använda som backgrundsbild: </p>
+			<span class="btn btn-file"><input type="file" name="file"/></span>
+		</div>
+		<div class="modal-footer">
+			<button class="btn" data-dismiss="modal" aria-hidden="true">Stäng</button>
+			<button type="button" class="upload-button btn btn-primary">Ladda upp</button>
+		</div>
+	</form>
+</div>
