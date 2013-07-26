@@ -112,7 +112,7 @@ exports.post = function(path, args, session, callback){
 		if("property_name" in args && "property_value" in args 
 			&& "object_id" in args && "object_type" in args){
 			
-			server.properties.set(args["object_type"], args["object_id"], args["property_name"], args["property_value"]
+			server.properties.set(args["object_type"], args["object_id"], args["property_name"], args["property_value"],
 				function(){
 					
 			}); 

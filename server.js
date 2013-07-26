@@ -49,6 +49,7 @@ var widgets = {}
 var pages = {};
 var users = {};
 var current_theme = {}; 
+var properties = {}; 
 
 db = mysql.createConnection(config.database);
 
@@ -806,6 +807,8 @@ function main(){
 	server_exports.widgets = widgets; 
 	server_exports.vfs = vfs; 
 	server_exports.users = users; 
+	server_exports.properties = properties; 
+	
 	server_exports.handlers = {
 		register: function(class_name, module){
 			if(class_name in handlers){
