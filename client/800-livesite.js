@@ -120,7 +120,7 @@ function InitTinyMCEImagePlugin(){
 		// Register plugin
 		tinymce.PluginManager.add('ajaximage', tinymce.plugins.ajaxImagePlugin);
 	} catch(e) {
-		alert("Could not initialize image plugin! Image upload will be disabled! "+e); 
+		alert("Could not initialize inline editing! Image upload will be disabled! "+e); 
 	}
 }
 

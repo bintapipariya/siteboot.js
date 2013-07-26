@@ -67,7 +67,7 @@ exports.post = function(path, args, session, callback){
 				console.log("Will overwrite local file "+local_path); 
 				fs.copy(file.path, local_path, function(){
 					console.log("File was successfully saved!"); 
-					server.vfs.add_index(PATH.basename(local_path)); 
+					server.vfs.add_index(local_path.substring(0, PATH.dirname(local_path).lastIndexOf("/content")+"/content".length)); 
 					done(); 
 				}); 
 			}; 

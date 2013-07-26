@@ -176,8 +176,8 @@ $(document).ready(function(){
 			
 			
 			$.upload( "/edit_helper", data, function(){
-				$(hero).attr("style", "background-image: url('"+target+"') !important"); 
-				$(hero).css("background-image", "url('"+target+"') !important"); 
+				$(hero).attr("style", "background-image: url('"+target+"?"+Math.random()+"') !important"); 
+				$(hero).css("background-image", "url('"+target+"?"+Math.random()+"') !important"); 
 				// remove the old file
 				var oldimage = $(hero).attr("data-image"); 
 				if(oldimage && oldimage != "" && target != oldimage){
