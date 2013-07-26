@@ -1,6 +1,7 @@
 var mustache = require("mustache");
 var PATH = require("path"); 
 var fs = require("fs"); 
+var crypto = require("crypto"); 
 
 var db = {}; 
 var templates = {};
@@ -37,6 +38,24 @@ fs.copy = function(source, target, cb) {
   }
 }
 
+function ajax_success(msg, data){
+	var obj = {
+		success: true, 
+		message: msg
+	}; 
+	if(data != undefined){
+		var keys = Object.keys(data); 
+		for(var key in keys){
+			obj[keys[key]] = data[keys[key]]; 
+		}
+	}
+	return JSON.stringify(obj); 
+}
+
+function ajax_error(msg, data){
+	return ajax_success(msg, {success: false}); 
+}
+
 exports.post = function(path, args, session, callback){
 	var cbCalled = false; 
 	console.log("EDIT HELPER: POST: "+JSON.stringify(args)); 
@@ -57,22 +76,38 @@ exports.post = function(path, args, session, callback){
 			}; 
 		}
 	} else if("file_upload" in args){
-		if("uploaded_file" in args && "target" in args){
+		if("uploaded_file" in args){
 			var file = args["uploaded_file"]; 
-			var target = args["target"]; 
+			var target; 
+			
+			if("target" in args) target = args["target"]; 
+			else target = "/uploads/"+crypto.createHash("md5")
+								.update(fs.readFileSync(file.path))
+								.digest("hex")+PATH.extname(file.name);
+			
+			console.log("Will save local file as "+target); 
+			
 			var basename = PATH.basename(target); 
 			var local_path = server.vfs.resolve(PATH.dirname(target));
 			if(local_path){
 				local_path = local_path+"/"+basename; 
 				console.log("Will overwrite local file "+local_path); 
-				fs.copy(file.path, local_path, function(){
+				fs.copy(file.path, local_path, function(err){
+					if(err) {
+						done("Could not overwrite existing file!"); 
+						return; 
+					}
 					console.log("File was successfully saved!"); 
-					server.vfs.add_index(local_path.substring(0, PATH.dirname(local_path).lastIndexOf("/content")+"/content".length)); 
-					done(); 
+					done(undefined, {filename: target, message: "Sucessfully uploaded file!"}); 
+					
+					server.vfs.add_index(local_path.substring(0, PATH.dirname(local_path).lastIndexOf("/content")+"/content".length));
+					return;  
 				}); 
-			}; 
+			} else {
+				console.log("Could not resolve directory "+PATH.dirname(target)); 
+			}
 		}
-		done(); 
+		return; 
 	} else if("set_property_value" in args){
 		if("property_name" in args && "property_value" in args 
 			&& "object_id" in args && "object_type" in args){
@@ -81,15 +116,18 @@ exports.post = function(path, args, session, callback){
 			db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]], function(error, rows){
 				if(error){
 					console.log("SQL ERROR in set_property_value: "+error);
-					done("");
+					done("Could not save property value! (sel)");
 					return; 
 				}
 				if(!rows || rows.length == 0){
 					// do insert
 					console.log("Inserting new value for property_name "+args["property_name"]+" = "+args["property_value"]); 
 					db.query("insert into fx_properties(object_type, object_id, property_name, property_value) values(?, ?, ?, ?)", [args["object_type"], args["object_id"], args["property_name"], args["property_value"]], function(error){
-							if(error) console.log(error); 
-							done(""); 
+							if(error){
+								console.log(error); 
+								done("Could not save property value! (ins)"); 
+							} else 
+								done(); 
 						});
 					return; 
 				} else {
@@ -103,9 +141,11 @@ exports.post = function(path, args, session, callback){
 						db.query("update fx_properties set property_value = ? where object_type = ? and object_id = ? and property_name = ?", 
 							[args["property_value"], args["object_type"], args["object_id"], args["property_name"]], 
 							function(error){
-							if(error) console.log(error); 
-							
-							done("");
+							if(error) {
+								console.log(error); 
+								done("Could not save property value! (upd)");
+							} else 
+								done("");
 						});
 						
 					}
@@ -113,13 +153,15 @@ exports.post = function(path, args, session, callback){
 			});
 		}
 	}
-	function done(err) {
+	function done(err, obj) {
     if (!cbCalled) {
-      callback(err);
+      if(err)
+				callback(ajax_error(err));
+			else
+				callback(ajax_success("Success!", obj)); 
       cbCalled = true;
     }
   }
-  done(); 
 }
 
 exports.render = function(path, args, session, done){ 
@@ -137,24 +179,16 @@ exports.render = function(path, args, session, done){
 				response: 'Required arguments missing for get_property_value! <br/>Please specify: '+
 					required.slice(0, required.length - 1).join(", ")+" and "+required[required.length - 1]+' of the "editable" html element.'
 			};
-			done(JSON.stringify(obj)); 
+			done("Missing one or more required arguments!"); 
 			return; 
 		}
 		db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]], function(error, rows, cols){
 			if(error){
 				console.log(error); 
 			} if(!error && rows && rows.length > 0){
-				var obj = {
-					success: true,  
-					response: rows[0]["property_value"]
-				};
-				done(JSON.stringify(obj)); 
+				done(ajax_success(rows[0]["property_value"])); 
 			} else {
-				var obj = {
-					success: false,
-					response: "No data found for property. "+JSON.stringify(args)
-				}; 
-				done(JSON.stringify(obj)); 
+				done(ajax_error("No data found for property. "+JSON.stringify(args))); 
 			}
 		}); 
 	} 
