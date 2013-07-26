@@ -956,6 +956,63 @@ users.login = function(username, hash, session, callback){
 	}); 
 };
 
+properties.get = function(type, id, name, done){
+	db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", 
+		[type, id, name], function(error, rows, cols){
+		if(error){
+			console.log(error); 
+		} if(!error && rows && rows.length > 0){
+			done(undefined, rows[0]["property_value"]); 
+		} else {
+			done("No data found for property. "+JSON.stringify([type, id, name])); 
+		}
+	}); 
+}
+
+properties.set = function(type, id, name, value, done){
+	// first select to see if the value already exists
+	db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", 
+		[type, id, name], function(error, rows){
+		if(error){
+			console.log("SQL ERROR in set_property_value: "+error);
+			done("Could not save property value! (sel)");
+			return; 
+		}
+		if(!rows || rows.length == 0){
+			// do insert
+			console.log("Inserting new value for property_name "+name+" = "+value); 
+			db.query("insert into fx_properties(object_type, object_id, property_name, property_value) values(?, ?, ?, ?)", 
+				[type, id, name, value], function(error){
+					if(error){
+						console.log(error); 
+						done("Could not save property value! (ins)"); 
+					} else 
+						done(); 
+				});
+			return; 
+		} else {
+			// otherwise do update
+			update(); 
+			function update(){
+				var row = rows[0]; 
+				var values = {};
+				console.log("Updating existing value for property_name "+args["property_name"]); 
+				values["property_value"] = value; 
+				db.query("update fx_properties set property_value = ? where object_type = ? and object_id = ? and property_name = ?", 
+					[value, type, id, name], 
+					function(error){
+					if(error) {
+						console.log(error); 
+						done("Could not save property value! (upd)");
+					} else 
+						done("");
+				});
+				
+			}
+		}
+	});
+}
+
 pages.get = function(path, done){
 	function return_page(rows){
 		var page = {

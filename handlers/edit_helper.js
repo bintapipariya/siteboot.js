@@ -112,45 +112,10 @@ exports.post = function(path, args, session, callback){
 		if("property_name" in args && "property_value" in args 
 			&& "object_id" in args && "object_type" in args){
 			
-			// first select to see if the value already exists
-			db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]], function(error, rows){
-				if(error){
-					console.log("SQL ERROR in set_property_value: "+error);
-					done("Could not save property value! (sel)");
-					return; 
-				}
-				if(!rows || rows.length == 0){
-					// do insert
-					console.log("Inserting new value for property_name "+args["property_name"]+" = "+args["property_value"]); 
-					db.query("insert into fx_properties(object_type, object_id, property_name, property_value) values(?, ?, ?, ?)", [args["object_type"], args["object_id"], args["property_name"], args["property_value"]], function(error){
-							if(error){
-								console.log(error); 
-								done("Could not save property value! (ins)"); 
-							} else 
-								done(); 
-						});
-					return; 
-				} else {
-					// otherwise do update
-					update(); 
-					function update(){
-						var row = rows[0]; 
-						var values = {};
-						console.log("Updating existing value for property_name "+args["property_name"]); 
-						values["property_value"] = args["property_value"]; 
-						db.query("update fx_properties set property_value = ? where object_type = ? and object_id = ? and property_name = ?", 
-							[args["property_value"], args["object_type"], args["object_id"], args["property_name"]], 
-							function(error){
-							if(error) {
-								console.log(error); 
-								done("Could not save property value! (upd)");
-							} else 
-								done("");
-						});
-						
-					}
-				}
-			});
+			server.properties.set(args["object_type"], args["object_id"], args["property_name"], args["property_value"]
+				function(){
+					
+			}); 
 		}
 	}
 	function done(err, obj) {
@@ -182,14 +147,11 @@ exports.render = function(path, args, session, done){
 			done("Missing one or more required arguments!"); 
 			return; 
 		}
-		db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]], function(error, rows, cols){
-			if(error){
-				console.log(error); 
-			} if(!error && rows && rows.length > 0){
-				done(ajax_success(rows[0]["property_value"])); 
-			} else {
-				done(ajax_error("No data found for property. "+JSON.stringify(args))); 
-			}
+		server.properties.get(args["object_type"], args["object_id"], args["property_name"], function(error, value){
+			if(error)
+				done(ajax_error("No property with these settings was found! ("+JSON.stringify(args)+")")); 
+			else 
+				done(ajax_success(value)); 
 		}); 
 	} 
 	/*
