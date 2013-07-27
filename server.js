@@ -138,6 +138,18 @@ function getOrCreateSession(sid){
 			sid: sid,
 			user: db.users.New(),
 			render: function(tpl, opts){return SessionRenderForm(tpl, this, opts); },
+			render_widgets: function(widgets, path, args, callback){
+				var self = this; 
+				var data = {}; 
+				async.eachSeries(Object.keys(widgets), function(k, cb){
+					widgets[k].render(path, args, self, function(x){
+						data[k] = x; 
+						cb(); 
+					});
+				}, function(){
+					callback(data); 
+				});
+			},
 			rendered_widgets: {}
 		}; 
 		sessions[sid] = session; 
@@ -312,7 +324,7 @@ function main(){
 	server.pages = db.pages; 
 	server.config = config;
 	server.basedir = BASEDIR; 
-	server.widgets = core.widgets; 
+	server.widgets = widgets; 
 	server.vfs = vfs; 
 	server.users = db.users; 
 	server.properties = db.properties; 
@@ -326,6 +338,17 @@ function main(){
 			console.log("Registered handler for "+class_name); 
 		}
 	}
+	
+	server.get_widget_or_empty = function(name){
+		if(!(name in widgets)){
+			return {
+				init: function(){},
+				render: function(a, b, c, d){d("Default widget!");}
+			}
+		} 
+		return widgets[name]; 
+	}
+	
 	async.series([
 		function(cb){
 			loader.LoadModule(process.cwd(), function(module){

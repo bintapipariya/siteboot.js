@@ -1,0 +1,21 @@
+<div class="container center"><!--header-->
+	<div class="navbar span9 center" style="float: none; margin-left: auto; margin-right: auto; margin-top: 20px; ">
+		<div class="navbar-inner">
+			<ul class="nav nav-pills center">
+				<a class="brand" href="/privat?customer_mode=privat">Privat:</a>
+				{{#items}}
+				<li class="dropdown">
+					<a class="dropdown-toggle" data-toggle="dropdown"  href='{{link}}'>{{label}}</a>
+					{{#dropdown}}
+					<ul class="dropdown-menu" role="menu" aria-labelledby="dLabel">
+						{{#items}}
+						<li><a href="{{link}}">{{label}}</a></li>
+						{{/items}}
+					</ul>
+					{{/dropdown}}
+				</li>
+				{{/items}}
+			</ul>
+		</div>
+	</div>
+</div>

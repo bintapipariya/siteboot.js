@@ -23,6 +23,7 @@ function LoadScripts(dir, callback){
 			try{
 				var script_name = file.replace(/\.[^/.]+$/, "");
 				var hr = require(dir+"/"+file);
+				if(!("init" in hr)) continue; 
 				hr.name = script_name; 
 				//hr.init(server, function(){
 				//	HandlerInitCompleted(hr); 
@@ -70,6 +71,12 @@ exports.LoadModule = function(path, callback){
 	if(fs.existsSync(path+"/init.js"))
 		module = require(path+"/init"); 
 		
+	if(!("init" in module)){
+		console.debug("Warning: no init in module "+path); 
+		callback(); 
+		return; 
+	}
+	
 	async.series([
 		function(callback){
 			console.debug("Loading html forms from "+path+"/html"); 
