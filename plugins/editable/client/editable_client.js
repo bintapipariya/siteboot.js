@@ -166,7 +166,7 @@ $(document).ready(function(){
 			var hero_id = $(dlg).attr("data-hero-id"); 
 			var target = $(form).find("input[type='file']").val(); 
 			var oldimage = $("#"+hero_id).attr("data-image"); 
-			target = "/editable_hero/hero_bg_"+hero_id+target.substr(target.lastIndexOf(".")); 
+			target = "/editable/hero_bg_"+hero_id+target.substr(target.lastIndexOf(".")); 
 			var data = new FormData( form[0]); 
 			data.append("file_upload", 1); 
 			data.append("target", target); 
@@ -180,7 +180,7 @@ $(document).ready(function(){
 				$(hero).css("background-image", "url('"+target+"?"+Math.random()+"') !important"); 
 				// remove the old file
 				var oldimage = $(hero).attr("data-image"); 
-				if(oldimage && oldimage != "" && target != oldimage){
+				if(oldimage && oldimage != "" && oldimage != "/editable/hero_bg_default.jpg" && target != oldimage){
 					$.ajax({
 						url: "/edit_helper",
 						type: "POST",

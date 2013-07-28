@@ -82,7 +82,7 @@ livesite.init = function(){
 	
 	$(".editable").each(function(i,v){
 		// load the latest value from the database
-		var obj = $(this); 
+		/*var obj = $(this); 
 		admin.get_property(obj.attr("data-object-type"), obj.attr("data-object-id"), obj.attr("data-property-name"), 
 			function(error, val){
 			if(!error)
@@ -90,7 +90,7 @@ livesite.init = function(){
 			else if(!(obj.attr("data-error-policy") === "ignore"))
 				obj.html("<div class='well' style='background-color: #f88;'>"+val+"</div>"); 
 		}); 
-		
+		*/
 	}); 
 }
 
@@ -139,9 +139,12 @@ livesite.start_editor = function(selector_id){
 		plugins: [
 				"autosave save advlist autolink lists link image charmap print preview anchor",
 				"searchreplace visualblocks code fullscreen",
-				"insertdatetime media table contextmenu paste imageupload"
+				"insertdatetime media table contextmenu paste imageupload textcolor"
 		],
-		toolbar: "save insertfile undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image imageupload",
+		toolbar: "save insertfile undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent forecolor,backcolor,fontselect,fontsizeselect | link image imageupload",
+		//skin: 'default',
+		theme_advanced_buttons1: "forecolor,backcolor,fontselect,fontsizeselect",
+		theme_advanced_buttons2: "",
 		save_enablewhendirty: false,
 		save_oncancelcallback: function(ed){
 			alert("Cancel.."); 
