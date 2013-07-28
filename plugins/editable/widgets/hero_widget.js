@@ -32,6 +32,8 @@ Widget.prototype.render = function(path, args, session, callback){
 	// retreive the widget text and render the widget
 	this.server.db.properties.get("editable_hero", "editable_hero"+widget.model.id, "content", function(error, value){
 		widget.model.content = value; 
+		widget.model.editable = session.user.loggedin; 
+		
 		widget.server.vfs.search(wildcard, function(error, files) {
 			if(!error && files.length){
 				public_image_path = files[0]; 

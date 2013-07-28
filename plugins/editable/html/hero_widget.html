@@ -6,7 +6,8 @@
 		</div>
 	</div>
 	<!-- Button to trigger modal -->
-	<a href="#editable_hero_dialog_{{model.id}}" style="position: absolute; right: 0; top: 0;" role="button" class="btn" data-toggle="modal">Byt backgrund</a>
+	{{#model.editable}}<a href="#editable_hero_dialog_{{model.id}}" style="position: absolute; right: 0; top: 0;" role="button" class="btn" data-toggle="modal"><i class="icon-picture"></i></a>
+	{{/model.editable}}
 </div>
 
  

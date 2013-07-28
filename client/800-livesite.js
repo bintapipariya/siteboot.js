@@ -82,7 +82,7 @@ livesite.init = function(){
 	
 	$(".editable").each(function(i,v){
 		// load the latest value from the database
-		var obj = $(this); 
+		/*var obj = $(this); 
 		admin.get_property(obj.attr("data-object-type"), obj.attr("data-object-id"), obj.attr("data-property-name"), 
 			function(error, val){
 			if(!error)
@@ -90,7 +90,7 @@ livesite.init = function(){
 			else if(!(obj.attr("data-error-policy") === "ignore"))
 				obj.html("<div class='well' style='background-color: #f88;'>"+val+"</div>"); 
 		}); 
-		
+		*/
 	}); 
 }
 
