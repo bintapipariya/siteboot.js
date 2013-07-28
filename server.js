@@ -251,7 +251,7 @@ function LoadTheme(theme, callback){
 		}
 		try{
 			var module; 
-			if(fs.existsSync(themebase+"/"+theme)){
+			if(fs.existsSync(themebase+"/"+theme+".js")){
 				console.log("DEPRECATED: "+theme+".js found in theme directory of "+theme+" - use init.js for theme init script in the future!"); 
 				try {
 					module = require(themebase+"/"+theme); 
