@@ -1,0 +1,15 @@
+<div class="row">
+	<div class="span3"><!--sidebar-->
+		<ul class="nav nav-tabs nav-stacked sticky" style="position: static; top: 0px;">
+			{{#sections}}
+			<li><a href="#{{id}}"><i class="icon-chevron-right pull-right"></i>{{title}}</a></li>
+			{{/sections}}
+		</ul>
+	</div><!--/sidebar-->
+	<div class="span9">
+		<div class="editable editable-content" data-object-type="page_content_control" 
+				data-object-id="{{object_id}}" data-property-name="content" data-error-policy="ignore">
+				{{{content}}}
+		</div>
+	</div>
+</div>
