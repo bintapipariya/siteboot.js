@@ -147,7 +147,7 @@ function getOrCreateSession(sid){
 						cb(); 
 					});
 				}, function(){
-					callback(data); 
+					if(callback) callback(data); 
 				});
 			},
 			rendered_widgets: {}
