@@ -84,6 +84,7 @@ Widget.prototype.data = function(data){
 		if("id" in data){
 			this.model.id = data.id; 
 		}
+		return this; 
 	} else {
 		return this.model; 
 	}

@@ -146,6 +146,7 @@ livesite.start_editor = function(selector_id){
 		theme_advanced_buttons1: "forecolor,backcolor,fontselect,fontsizeselect",
 		theme_advanced_buttons2: "",
 		save_enablewhendirty: false,
+		extended_valid_elements : "iframe[src|width|height|name|align]",
 		save_oncancelcallback: function(ed){
 			alert("Cancel.."); 
 		},

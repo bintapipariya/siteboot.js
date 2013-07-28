@@ -40,6 +40,7 @@ Widget.prototype.render = function(path, args, session, callback){
 Widget.prototype.data = function(data){
 	if(data){
 		this.model = data; 
+		return this; 
 	} else {
 		return this.model; 
 	}

@@ -19,8 +19,10 @@ exports.new = function(x){
 }
 
 Widget.prototype.data = function(data){
-	if(data)
+	if(data){
 		this.model = data; 
+		return this; 
+	}
 	else return this.model; 
 }
 
@@ -31,7 +33,7 @@ Widget.prototype.render = function(path, args, session, callback){
 	
 	// retreive the widget text and render the widget
 	this.server.db.properties.get("editable_hero", "editable_hero"+widget.model.id, "content", function(error, value){
-		widget.model.content = value; 
+		widget.model.content = value||"Edit me!"; 
 		widget.model.editable = session.user.loggedin; 
 		
 		widget.server.vfs.search(wildcard, function(error, files) {

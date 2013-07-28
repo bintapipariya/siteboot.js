@@ -342,6 +342,7 @@ function main(){
 	server.get_widget_or_empty = function(name){
 		if(!(name in widgets)){
 			return {
+				new: function(){throw "New can not be called on default widget! Fix your code!";},
 				init: function(){},
 				render: function(a, b, c, d){d("Default widget!");}
 			}
