@@ -257,7 +257,7 @@ properties.set = function(type, id, name, value, done){
 			function update(){
 				var row = rows[0]; 
 				var values = {};
-				console.log("Updating existing value for property_name "+args["property_name"]); 
+				console.log("Updating existing value for property_name "+name); 
 				values["property_value"] = value; 
 				exports.db.query("update fx_properties set property_value = ? where object_type = ? and object_id = ? and property_name = ?", 
 					[value, type, id, name], 

@@ -405,7 +405,7 @@ function main(){
 						loader.LoadModule(directory+"/"+plug, function(module){
 							if(module){
 								// for plugins we must prefix all resources with plugin name and underscore
-								vfs.add_index(directory+"/content", function(){
+								vfs.add_index(directory+"/"+plug+"/content", function(){
 									cb(); 
 								}); 
 								module.init(server); 

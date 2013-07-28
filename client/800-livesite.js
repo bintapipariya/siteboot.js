@@ -139,9 +139,12 @@ livesite.start_editor = function(selector_id){
 		plugins: [
 				"autosave save advlist autolink lists link image charmap print preview anchor",
 				"searchreplace visualblocks code fullscreen",
-				"insertdatetime media table contextmenu paste imageupload"
+				"insertdatetime media table contextmenu paste imageupload textcolor"
 		],
-		toolbar: "save insertfile undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image imageupload",
+		toolbar: "save insertfile undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent forecolor,backcolor,fontselect,fontsizeselect | link image imageupload",
+		//skin: 'default',
+		theme_advanced_buttons1: "forecolor,backcolor,fontselect,fontsizeselect",
+		theme_advanced_buttons2: "",
 		save_enablewhendirty: false,
 		save_oncancelcallback: function(ed){
 			alert("Cancel.."); 

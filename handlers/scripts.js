@@ -56,7 +56,7 @@ exports.init = function(ctx){
 			load_scripts("plugins", cb);
 		},
 		function(cb){
-			load_scripts("themes", cb); 
+			load_scripts("themes/"+server.config.theme, cb); 
 		}
 	], function(){
 		
