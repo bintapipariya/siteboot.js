@@ -438,6 +438,7 @@ function main(){
 					if(module){
 						current_theme = module; 
 						current_theme.init(server); 
+						server.vfs.add_index(process.cwd()+"/themes/"+config.theme+"/content"); 
 						for(var key in module.forms) forms[key] = module.forms[key]; 
 						for(var key in module.handlers) handlers[key] = module.handlers[key]; 
 						for(var key in module.widgets) widgets[key] = module.widgets[key]; 
