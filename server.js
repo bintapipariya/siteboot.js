@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************/
 
 var Fortmax = function(){
-	
+var agent = require('webkit-devtools-agent');	
 var http = require("http");
 var https = require("https");
 var fs = require("fs");
@@ -131,6 +131,15 @@ function getOrCreateSession(sid){
 	var cookies = {};
 	var session = {}; 
 	
+	function setSessionTimeout(session){
+		if("timeout" in session)
+			clearTimeout(session.timeout); 
+		session.timeout = setTimeout(function(){
+			console.debug("Removing session object for "+session.sid); 
+			delete sessions[session.sid];
+		}, 60000*20); 
+	}; 
+		
 	if(!sid || sid == "" || !(sid in sessions)){
 		// generate new session
 		var sid = String(crypto.createHash("sha1").update(String(Math.random())).digest("hex")); 
@@ -152,10 +161,12 @@ function getOrCreateSession(sid){
 			},
 			rendered_widgets: {}
 		}; 
+		setSessionTimeout(session); 
 		sessions[sid] = session; 
 		console.debug("Creating new session: "+session.sid); 
 	} else {
 		session = sessions[sid]; 
+		setSessionTimeout(session); 
 	}
 	return session; 
 }
