@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************/
 
 var Fortmax = function(){
-var agent = require('webkit-devtools-agent');	
+
 var http = require("http");
 var https = require("https");
 var fs = require("fs");
