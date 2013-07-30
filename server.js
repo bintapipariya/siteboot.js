@@ -302,6 +302,7 @@ function CreateServer(){
 					
 					if("post" in handler){
 						handler.post(cleanpath, args, session, function(response){
+							headers["Content-type"] = "text/html; charset=utf-8"; 
 							res.writeHead(200, headers); 
 							if(response) res.write(response); 
 							res.end(); 
