@@ -324,7 +324,22 @@ function CreateServer(){
 						
 					Object.keys(fields).map(function(k){args[k] = fields[k]; }); 
 					
-					if("post" in handler){
+					if(args["rcpt"] && args["rcpt"] in plugins && "post" in plugins[args["rcpt"]]){
+						var plug = plugins[args["rcpt"]]; 
+
+						plug.post(cleanpath, args, session, function(response){
+							headers["Content-type"] = "text/html; charset=utf-8"; 
+							// optional global redirect option
+							if("redirect" in args){
+								headers["Location"] = args["redirect"]; 
+								res.writeHead(301, headers); 
+							} else {
+								res.writeHead(200, headers); 
+							}
+							if(response) res.write(response); 
+							res.end(); 
+						});  
+					} else if("post" in handler){
 						handler.post(cleanpath, args, session, function(response){
 							headers["Content-type"] = "text/html; charset=utf-8"; 
 							res.writeHead(200, headers); 
@@ -344,6 +359,10 @@ function CreateServer(){
 				servePOST(); 
 			} else if(req.method == "GET"){
 				serveGET(); 
+			} else {
+				res.writeHead(504, headers); 
+				res.write("Server does not recognize this request method "+req.method); 
+				res.end(); 
 			}
 		} catch(e) { // prevent server crash
 			console.debug("FATAL ERROR WHEN SERVING CLIENT "+path+", session: "+JSON.stringify(session)+": "+e+"\n"+e.stack); 
