@@ -29,6 +29,11 @@ Widget.prototype.render = function(path, args, session, callback){
 	widget.server.properties.get("editable_content", widget.model.id, "content", function(err, value){
 		if(!err) {
 			widget.model.content = value;
+		} else {
+			console.log("Error while getting value for "+widget.model.id+": "+err); 
+		}
+		if(!value){
+			console.log("Error: could not get value for (editable_content, "+widget.model.id+", content)"); 
 		}
 		var html = session.render("editable_content", {
 			model: widget.model

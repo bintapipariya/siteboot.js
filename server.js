@@ -110,7 +110,19 @@ function WidgetValue(widget, args, session){
 }
 
 
-function SessionRenderForm(template, session, args) {
+var User = function(){
+	this.loggedin = false; 
+	this.username = "default";
+}
+
+var Session = function(){
+	this.sid = String(crypto.createHash("sha1").update(String(Math.random())).digest("hex")); 
+	this.user = new User(); 
+	this.rendered_widgets = {}; 
+}
+
+Session.prototype.render = function(template, args){
+	var session = this; 
 	var params = {};
 	// add all value retreivers for all currently available widgets
 	for(var key in widgets){
@@ -127,6 +139,31 @@ function SessionRenderForm(template, session, args) {
 	} 
 }
 
+Session.prototype.render_widgets = function(widgets, path, args, callback){
+	var self = this; 
+	var data = {}; 
+	async.eachSeries(Object.keys(widgets), function(k, cb){
+		if(widgets[k]){
+			widgets[k].render(path, args, self, function(x){
+				data[k] = x; 
+				cb(); 
+			});
+		} else {
+			console.debug("Error: empty widget found in argument for key "+k); 
+			cb(); 
+		}
+	}, function(){
+		if(callback) callback(data); 
+	});
+}
+
+Session.prototype.toJSON = function(){
+	return {
+		sid: this.sid, 
+		user: this.user
+	}
+}
+			
 function getOrCreateSession(sid){
 	var cookies = {};
 	var session = {}; 
@@ -140,33 +177,24 @@ function getOrCreateSession(sid){
 		}, 60000*20); 
 	}; 
 		
+	console.log("Looking up session "+sid+"..."); 
+	
 	if(!sid || sid == "" || !(sid in sessions)){
 		// generate new session
-		var sid = String(crypto.createHash("sha1").update(String(Math.random())).digest("hex")); 
-		session = {
-			sid: sid,
-			user: db.users.New(),
-			render: function(tpl, opts){return SessionRenderForm(tpl, this, opts); },
-			render_widgets: function(widgets, path, args, callback){
-				var self = this; 
-				var data = {}; 
-				async.eachSeries(Object.keys(widgets), function(k, cb){
-					widgets[k].render(path, args, self, function(x){
-						data[k] = x; 
-						cb(); 
-					});
-				}, function(){
-					if(callback) callback(data); 
-				});
-			},
-			rendered_widgets: {}
-		}; 
+		session = new Session(); 
+		// init all plugins
+		for(var key in plugins){
+			if("initSession" in plugins[key]){
+				plugins[key].initSession(session); 
+			}
+		}
 		setSessionTimeout(session); 
-		sessions[sid] = session; 
+		sessions[session.sid] = session; 
 		console.debug("Creating new session: "+session.sid); 
 	} else {
 		session = sessions[sid]; 
 		setSessionTimeout(session); 
+		console.debug("Returning existing session: "+session.sid); 
 	}
 	return session; 
 }
@@ -205,7 +233,8 @@ function CreateServer(){
 			var headers = {
 				"Content-type": "text/plain"
 			}; 
-			
+			headers["Set-Cookie"] = "session="+session.sid+"; path=/";
+		
 			function serveFile(res, filepath){
 				fs.readFile(filepath, "binary", function(err, data){
 					if(err) {
@@ -225,6 +254,8 @@ function CreateServer(){
 			}
 			
 			function renderWidgets(args, dst, callback){
+				callback(); 
+				return; 
 				async.eachSeries(Object.keys(widgets), function(i, callback){
 					console.log("Prerendering widget "+i); 
 					var new_args = {};
@@ -249,44 +280,37 @@ function CreateServer(){
 					serveFile(res, filepath); 
 				} else {
 					console.debug("Will serve PAGE "+docpath); 
-					async.series([
-						function(cb){
-							renderWidgets(args, session.rendered_widgets, function(){cb();}); 
-						}, 
-						function(cb){
-							headers["Set-Cookie"] = "session="+session.sid+"; path=/";
-							headers["Content-type"] = "text/html; charset=utf-8"; 
-							headers["Cache-Control"] = "public max-age=120";
-							
-							if(!handler) {
-								res.writeHead(404, headers); 
-								res.write("Path not found!"); 
+					
+					headers["Content-type"] = "text/html; charset=utf-8"; 
+					headers["Cache-Control"] = "public max-age=120";
+					
+					if(!handler) {
+						res.writeHead(404, headers); 
+						res.write("Path not found!"); 
+						res.end(); 
+						return; 
+					}
+					
+					if("headers" in handler){
+						for(var key in handler.headers){
+							headers[key] = handler.headers[key];
+						} 
+					}
+					
+					// do the render, either though theme or plugin
+					if("render" in handler || "get" in handler){
+						(handler["render"] || handler["get"])(cleanpath, args, session,
+							function(html){
+								res.writeHead(200, headers); 
+								res.write(html); 
 								res.end(); 
-								return; 
-							}
-							
-							if("headers" in handler){
-								for(var key in handler.headers){
-									headers[key] = handler.headers[key];
-								} 
-							}
-							
-							// do the render, either though theme or plugin
-							if("render" in handler || "get" in handler){
-								(handler["render"] || handler["get"])(cleanpath, args, session,
-									function(html){
-										res.writeHead(200, headers); 
-										res.write(html); 
-										res.end(); 
-								});
-							} else {
-								console.debug("Could not find render method in handler "+JSON.stringify(handler)); 
-								res.writeHead(404, headers); 
-								res.write("Page was not found on this server!"); 
-								res.end(); 
-							}
-						}
-					]);
+						});
+					} else {
+						console.debug("Could not find render method in handler "+JSON.stringify(Object.keys(handler))); 
+						res.writeHead(404, headers); 
+						res.write("Page was not found on this server!"); 
+						res.end(); 
+					}
 				}
 			}
 			function servePOST(){
@@ -346,7 +370,7 @@ function main(){
 			if(class_name in handlers){
 				console.log("WARNING: Replacing handler for "+class_name); 
 			}
-			handlers[class_name] = module; 
+			//handlers[class_name] = module; 
 			console.log("Registered handler for "+class_name); 
 		}
 	}
@@ -354,9 +378,10 @@ function main(){
 	server.get_widget_or_empty = function(name){
 		if(!(name in widgets)){
 			return {
-				new: function(){throw "New can not be called on default widget! Fix your code!";},
+				new: function(){throw "Error creating instance of "+name+": New can not be called on default widget! Fix your code!";},
 				init: function(){},
-				render: function(a, b, c, d){d("Default widget!");}
+				render: function(a, b, c, d){d("Default widget!");},
+				data: function(data){return this;}
 			}
 		} 
 		return widgets[name]; 
@@ -402,18 +427,18 @@ function main(){
 			var directory = process.cwd()+"/plugins"; 
 			console.debug("Loading plugins from "+directory); 
 			fs.readdir(directory, function(err, files) {
-				var plugins = []; 
+				var pl = []; 
 				async.each(files, function(file, next){
 					fs.stat(directory + '/' + file, function(err, stats) {
 						console.log(JSON.stringify(stats)+" "+stats.isDirectory()); 
 						if(stats.isDirectory()) {
-							plugins.push(file); 
+							pl.push(file); 
 						}
 						next(); 
 					});
 				}, loadplugins); 
 				function loadplugins(){
-					async.eachSeries(plugins, function(plug, cb){
+					async.eachSeries(pl, function(plug, cb){
 						console.debug("Loading plugin "+plug); 
 						loader.LoadModule(directory+"/"+plug, function(module){
 							if(module){
@@ -431,6 +456,7 @@ function main(){
 									module.widgets[key].init(server); 
 									widgets[plug+"_"+key] = module.widgets[key]; 
 								}
+								plugins[plug] = module; 
 							} else {
 								cb(); 
 							}
@@ -450,11 +476,18 @@ function main(){
 				loader.LoadModule(process.cwd()+"/themes/"+config.theme, function(module){
 					if(module){
 						current_theme = module; 
-						current_theme.init(server); 
 						server.vfs.add_index(process.cwd()+"/themes/"+config.theme+"/content"); 
 						for(var key in module.forms) forms[key] = module.forms[key]; 
-						for(var key in module.handlers) handlers[key] = module.handlers[key]; 
-						for(var key in module.widgets) widgets[key] = module.widgets[key]; 
+						for(var key in module.handlers){
+							handlers[key] = module.handlers[key]; 
+							handlers[key].init(server); 
+						}
+						for(var key in module.widgets) {
+							widgets[key] = module.widgets[key]; 
+							widgets[key].init(server); 
+						}
+						
+						current_theme.init(server); 
 					}
 					cb(); 
 				}); 
