@@ -21,7 +21,7 @@ exports.post = function(path, args, session, callback){
 			return; 
 		}
 		console.log("Attempting to login user "+args["username"]); 
-		server.users.login({username: args["username"], hash: args["hash"]}, function(error, user){
+		server.users.login(args["username"], args["hash"], session, function(error, user){
 			console.log("User "+args["username"]+" has successfully logged in!"); 
 		}); 
 	}
