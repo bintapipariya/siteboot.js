@@ -36,7 +36,7 @@ From this point on, the server loads all the plugins that it can find in /plugin
 Implementing a plugin
 =====================
 
-A plugin in LiveSite can override almost all 
+Coming soon..
 	
 
 MEDIA UPLOADS
