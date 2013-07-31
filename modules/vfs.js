@@ -25,7 +25,7 @@ exports.add_index = function(dir, callback){
 	var addtoindex = function(root, stat, next){
 		var realpath = root+"/"+stat.name; 
 		var path = root.substr(dir.length)+"/"+stat.name;
-		console.log("Adding link "+path+" -> "+realpath); 
+		//console.log("Adding link "+path+" -> "+realpath); 
 		index[path] = realpath; 
 		next(); 
 	}

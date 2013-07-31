@@ -21,19 +21,17 @@ Widget = function(x){
 	this.model = {
 		id: "default", // default id
 		content: "Default content",
+		name: "content",
 	}
 }
 Widget.prototype.render = function(path, args, session, callback){
 	var widget = this; 
-	
-	widget.server.properties.get("editable_content", widget.model.id, "content", function(err, value){
+
+	widget.server.properties.get("editable_content", widget.model.id, widget.model.name||"content", function(err, value){
 		if(!err) {
 			widget.model.content = value;
 		} else {
-			console.log("Error while getting value for "+widget.model.id+": "+err); 
-		}
-		if(!value){
-			console.log("Error: could not get value for (editable_content, "+widget.model.id+", content)"); 
+			widget.model.content = "<p>Default content</p>"; 
 		}
 		var html = session.render("editable_content", {
 			model: widget.model
@@ -44,7 +42,7 @@ Widget.prototype.render = function(path, args, session, callback){
 
 Widget.prototype.data = function(data){
 	if(data){
-		this.model = data; 
+		for(var key in data) this.model[key] = data[key]; 
 		return this; 
 	} else {
 		return this.model; 
