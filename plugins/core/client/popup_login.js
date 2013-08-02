@@ -14,7 +14,7 @@ function popup_login_do_login(){
 			username: data.username, 
 			hash: sha1,
 		},
-		success: function(response){
+		success: function(response){ 
 			if(response.indexOf("Error") == 0){
 				alert(response);
 			} else {
@@ -24,6 +24,7 @@ function popup_login_do_login(){
 					window.location = window.location.pathname; 
 			}
 		}
+		
 	}); 
 	return false; 
 }

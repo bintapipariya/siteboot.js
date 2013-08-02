@@ -22,7 +22,12 @@ exports.post = function(path, args, session, callback){
 		}
 		console.log("Attempting to login user "+args["username"]); 
 		server.users.login(args["username"], args["hash"], session, function(error, user){
-			console.log("User "+args["username"]+" has successfully logged in!"); 
+			if(error){
+				callback("Error: wrong username or password!"); 
+			} else {
+				console.log("User "+args["username"]+" has successfully logged in!");
+				callback(); 
+			}
 		}); 
 	}
 }
