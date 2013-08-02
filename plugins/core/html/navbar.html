@@ -1,0 +1,25 @@
+<div class="navbar " style="float: none; box-shadow: 2px 2px 5px #eee;">
+	<div class="navbar-inner " style="border-radius: 0px;">
+		<ul class="nav nav-pills span9 pull-left" style="float: none;">
+			<a class="brand" href="{{brand.link}}">{{brand.label}}</a>
+			{{#items}}
+				{{#dropdown}}
+				<li class="dropdown">
+					<a class="dropdown-toggle" data-toggle="dropdown"  href='{{link}}'>{{label}}</a>
+					<ul class="dropdown-menu" role="menu" aria-labelledby="dLabel">
+						{{#items}}
+						<li><a href="{{link}}">{{label}}</a></li>
+						{{/items}}
+					</ul>
+				</li>
+				{{/dropdown}}
+				{{^dropdown}}
+				<li>
+					<a href='{{link}}'>{{label}}</a>
+				</li>
+				{{/dropdown}}
+			{{/items}}
+		</ul>
+	</div>
+</div>
+<div style="clear: both;"></div>

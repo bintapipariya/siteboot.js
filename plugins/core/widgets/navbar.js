@@ -1,17 +1,17 @@
-var Widget = function(){
+var Widget = function(x){
 	this.model = {
 		brand: {
 			label: "Label",
-			link: "#"
 		}, 
 		items: [
 			
 		]
 	};
+	this.server = x; 
 }
 
 Widget.prototype.render = function(path, args, session, callback){
-	var html = session.render("slickmenu_widget", this.model); 
+	var html = session.render("core_navbar", this.model); 
 	callback(html); 
 }
 
@@ -20,7 +20,6 @@ Widget.prototype.data = function(data){
 	var items = data.items; 
 	
 	function make_menu(data, items){
-		console.log(JSON.stringify(data)); 
 		for(var kid in Object.keys(data)){
 			var key = Object.keys(data)[kid];
 			if(data[key] instanceof(Object)){
@@ -45,19 +44,24 @@ Widget.prototype.data = function(data){
 	make_menu(data.items, list); 
 	
 	this.model = {
+		float: (data.float)?((data.float == "center")?"center":"pull-"+data.float):"center",
 		brand: {
 			label: Object.keys(brand)[0],
 			link: brand[Object.keys(brand)[0]]
 		},
 		items: list
 	} 
+	return this; 
 }
 
 exports.init = function(x){
-	Widget.prototype.server = x; 
-	return Widget; 
+
 }
 
+exports.new = function(x){
+	return new Widget(x); 
+}
+	
 exports.render = function(path, args, session, callback){
 	callback("None"); 
 }

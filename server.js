@@ -229,6 +229,14 @@ function CreateServer(){
 				handler = handlers[pages[docpath].handler];
 			}
 			
+			// auto login
+			if(!session.user.loggedin && server.config.auto_login){
+				session.user = {
+					username: "admin",
+					role: "admin",
+					loggedin: true
+				}
+			}
 			
 			var headers = {
 				"Content-type": "text/plain"
