@@ -1,3 +1,35 @@
+{{#loggedin}}
+<div class="row">
+	<div class="span5">
+		<form action="" method="post">
+			<input type="hidden" name="rcpt" value="editable"/>
+			<input type="hidden" name="redirect" value=""/>
+			<input type="hidden" name="widget" value="page_content_control"/>
+			<input type="hidden" name="save_seo_settings"/>
+			<input type="hidden" name="object_id" value="{{object_id}}"/>
+			<fieldset>
+				<legend>Page SEO Settings</legend>
+				{{#extra_fields}}
+					<label>{{title}}</label>
+					<input type="{{type}}" placeholder="{{hint}}" name="{{name}}" autocomplete="off" value="{{value}}" data-target="{{name}}-target" data-toggle="live_copy"/>
+				{{/extra_fields}}
+				<div style="clear: both;"></div>
+				<button type="submit" class="btn btn-primary">Spara</button>
+				<div style="clear: both; margin-bottom: 10px;"></div>
+				<legend></legend>
+			</fieldset>
+		</form>
+	</div>
+	<div class="span5">
+		<div class="google_preview">
+			<p style="font-size: 10px; color: #666;">Google preview:</p>
+			<h3 data-id="title-target">{{google_title}}</h3>
+			<span class="bc">www.test.com/foobar</span>
+			<div data-id="meta-target" class="meta">{{google_meta}}</div>
+		</div>
+	</div>
+</div>
+{{/loggedin}}
 <div class="row">
 	<div class="span3"><!--sidebar-->
 		<ul class="nav nav-tabs nav-stacked sticky" style="position: static; top: 0px;">
@@ -6,7 +38,7 @@
 			{{/sections}}
 		</ul>
 	</div><!--/sidebar-->
-	<div class="span9">
+	<div class="span10">
 		<div class="editable editable-content" data-object-type="page_content_control" 
 				data-object-id="{{object_id}}" data-property-name="content" data-error-policy="ignore">
 				{{{content}}}

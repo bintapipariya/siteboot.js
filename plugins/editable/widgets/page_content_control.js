@@ -24,11 +24,52 @@ Widget = function(x){
 	this.model = {
 		id: "page_content_control" // default id
 	}
+	this.widgets = {}; 
+	this.widgets["content"] = x.get_widget_or_empty("editable_content").new(x).data({field_type: "page_content_control"}); 
+	this.model.extra_fields = {
+		title: {title: "Page title", name: "title", type: "text", hint: "Page Title"},
+		meta: {title: "Meta description", name: "meta", type: "text", hint: "Page meta data"}
+	}
 }
 Widget.prototype.render = function(path, args, session, callback){
 	var widget = this; 
 	
-	this.server.properties.get("page_content_control", path, "content", function(err, value){
+	
+	this.server.properties.get_object("page_content_control", path, function(err, obj){
+		if(!obj){
+			obj = {
+				title: "Default title",
+				content: "Default content",
+				meta: "Default meta"
+			}
+		}
+		var value = obj.content; 
+		widget.model.page = obj; 
+		
+		if(!("title" in obj) || obj.title == ""){
+			// try to extract page title from content
+			var headings = ["h1", "h2", "h3", "h4", "h5"]; 
+			var found = false; 
+			for (var k in headings){
+				var r = $("<html>"+obj.content+"</html>").find(headings[k]); 
+				if(r.length > 0){
+					obj.title = $(r[0]).text(); 
+					found = true; 
+					break; 
+				}
+			}
+			if(!found){
+				// try to construct a title based on the page path
+				var line = path.split("/").map(function(x){return x.charAt(0).toUpperCase() + x.slice(1); }).join(" "); 
+				obj.title = line||"Home"; 
+			}
+		}
+		for(var key in obj) {
+			if(key in widget.model.extra_fields)
+				widget.model.extra_fields[key].value = obj[key]; 
+			widget.model[key] = obj[key]; 
+		}
+		
 		// extract sections from the content
 		var sections = []; 
 		var widgets_to_render = []; 
@@ -75,12 +116,22 @@ Widget.prototype.render = function(path, args, session, callback){
 					title: $(v).attr("data-title")
 				}); 
 			}); 
-			var html = session.render("editable_page_content_control", {
-				object_id: path, 
-				content: value,
-				sections: sections
+			session.render_widgets(widget.widgets, path, args, function(data){
+				data.object_id = path; 
+				data.content = value; 
+				data.sections = sections; 
+				data.google_title = obj.title;
+				data.google_meta = obj.meta; 
+				data.loggedin = session.user.loggedin; 
+				
+				// compute list of fields for SEO
+				var fields = []; 
+				Object.keys(widget.model.extra_fields).map(function(x){fields.push(widget.model.extra_fields[x]);});
+				data.extra_fields = fields; 
+				
+				var html = session.render("editable_page_content_control", data); 
+				callback(html); 
 			}); 
-			callback(html); 
 		}); 
 	}); 
 }

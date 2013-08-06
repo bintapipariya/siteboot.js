@@ -109,7 +109,76 @@ function WidgetValue(widget, args, session){
 	};
 }
 
+server.SendEmail = function(rcpt_email, caption, template_name, data){
+	var path         = require('path')
+	, templatesDir   = path.resolve(__dirname, '..', 'templates')
+	, emailTemplates = require('email-templates')
+	, nodemailer     = require('nodemailer');
+	
+	emailTemplates(__dirname+"/email_templates", function(err, template) {
+		if (err) {
+			console.log(err);
+			throw err; 
+		} else {
 
+			var transportBatch = nodemailer.createTransport("SMTP", {
+				service: "Gmail",
+				auth: {
+					user: config.noreply_email,
+					pass: config.noreply_pass
+				}
+			});
+			
+			// An example users object
+			var rcpt = 
+			[
+				{
+					email: rcpt_email,
+					data: data
+				}
+			];
+
+			var Render = function(data) {
+				this.data = data;
+				this.send = function(err, html, text) {
+					if (err) {
+						console.log(err);
+					} else {
+						transportBatch.sendMail({
+							from: (config.noreply_from_name||"Default")+"<"+config.noreply_email+">",
+							to: data.email,
+							subject: caption,
+							html: html,
+							// generateTextFromHTML: true,
+							text: text
+						}, function(err, responseStatus) {
+							if (err) {
+								console.log(err);
+							} else {
+								console.log(responseStatus.message);
+							}
+						});
+					}
+				};
+				this.batch = function(batch) {
+					try{
+						batch(this.data, "email_templates", this.send);
+					} catch(e){
+						console.log("ERROR WHILE SENDING EMAILS: "+e); 
+					}
+				};
+			};
+
+			// Load the template and send the emails
+				template(template_name, true, function(err, batch) {
+					for(var rc in rcpt) {
+						var render = new Render(rcpt[rc]);
+						render.batch(batch);
+					}
+				});
+		}
+	});
+}
 var User = function(){
 	this.loggedin = false; 
 	this.username = "default";
@@ -347,6 +416,23 @@ function CreateServer(){
 							if(response) res.write(response); 
 							res.end(); 
 						});  
+					} else if("rcpt" in args && (args["rcpt"] == "livesite" || args["rcpt"] == "core")){
+						// stuff that is submitted directly to the server
+						if("contact_info" in args){
+							var caption = args["email_caption"]||"New customer information!"; 
+							var email = args["target_email"]||config.admin_email; 
+							server.SendEmail(email, caption, "contact_form_notification", args); 
+						}
+						headers["Content-type"] = "text/html; charset=utf-8"; 
+						// optional global redirect option
+						if("redirect" in args){
+							headers["Location"] = args["redirect_href"]||docpath; 
+							res.writeHead(301, headers); 
+						} else {
+							res.writeHead(200, headers); 
+						}
+						res.write("Done!"); 
+						res.end(); 
 					} else if("post" in handler){
 						handler.post(cleanpath, args, session, function(response){
 							headers["Content-type"] = "text/html; charset=utf-8"; 

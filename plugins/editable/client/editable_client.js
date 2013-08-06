@@ -205,4 +205,14 @@ $(document).ready(function(){
 			});
 		});
 	});
+	
+	// bind the live_copy targets
+	$("input[data-toggle='live_copy']").each(function(i, x){
+		$(x).keypress(function(e){
+			setTimeout(function(){
+				var self = $(e.target); 
+				$("*[data-id='"+self.attr("data-target")+"']").html(self.val()); 
+			}, 0); 
+		});
+	}); 
 }); 

@@ -230,6 +230,21 @@ properties.get = function(type, id, name, done){
 	}); 
 }
 
+properties.get_object = function(type, id, done){
+	exports.db.query("select * from fx_properties where object_type = ? and object_id = ?", 
+		[type, id], function(error, rows, cols){
+		if(error){
+			console.log(error); 
+		} if(!error && rows && rows.length > 0){
+			var obj = {}; 
+			for(var key in rows) obj[rows[key].property_name] = rows[key].property_value; 
+			done(undefined, obj); 
+		} else {
+			done("No data found for property. "+JSON.stringify([type, id])); 
+		}
+	}); 
+}
+
 properties.set = function(type, id, name, value, done){
 	// first select to see if the value already exists
 	exports.db.query("select * from fx_properties where object_type = ? and object_id = ? and property_name = ?", 
