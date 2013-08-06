@@ -1,0 +1,153 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+	<head>
+			<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+
+			<title>Säkra Dörren™</title>
+</head>
+	<body leftmargin="0" marginwidth="0" topmargin="0" marginheight="0" offset="0" style="background: #eeeeee url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAkAAAAJCAYAAADgkQYQAAAAOklEQVQYGWP8//8/AyHAREgBIyOjMQPIJFwYaIAxSI6RbOvAViC7A90qmBXI4qRZh2EFunXYrEC2DgDc+VH0jS2AGAAAAABJRU5ErkJggg==);">
+		<center style="padding: 70px 0 0 0;">
+				<table border="0" cellpadding="0" cellspacing="0" height="100%" width="100%" id="backgroundTable">
+						<tr>
+								<td align="center" valign="top">
+
+									
+											<!-- // End Template Preheader \\ -->
+										<table border="0" cellpadding="0" cellspacing="0" width="600" id="templateContainer" style="-webkit-box-shadow:0 0 0 3px rgba(0,0,0,0.025); -webkit-border-radius:6px;background-color:#fdfdfd;">
+												<tr>
+														<td align="center" valign="top">
+																	<!-- // Begin Template Header \\ -->
+																<table border="0" cellpadding="0" cellspacing="0" width="600" id="templateHeader" style="background-color:#557da1; -webkit-border-top-left-radius:6px; -webkit-border-top-right-radius:6px; color:#ffffff; font-family:Arial; font-weight:bold; line-height:100%; vertical-align:middle;">
+
+																			<tr>
+																					<td class="headerContent" style="padding:24px; ">
+
+																						<!-- // Begin Module: Standard Header Image \\ -->
+																						<h1 class="h1" style="color:#ffffff !important; margin:0; text-shadow:0 1px 0 #7797b4;">Orderbekräftelse</h1>
+																						<!-- // End Module: Standard Header Image \\ -->
+
+																					</td>
+																			</tr>
+																	</table>
+																	<!-- // End Template Header \\ -->
+															</td>
+													</tr>
+												<tr>
+														<td align="center" valign="top">
+																	<!-- // Begin Template Body \\ -->
+																<table border="0" cellpadding="0" cellspacing="0" width="600" id="templateBody">
+																		<tr>
+																					<td valign="top" class="bodyContent" style="background-color:#fdfdfd;">
+
+																							<!-- // Begin Module: Standard Content \\ -->
+																							<table border="0" cellpadding="20" cellspacing="0" width="100%">
+																									<tr>
+																											<td valign="top">
+																													<div>
+<p>Hej <%= order.address.first_name %>. <br/><br/>Din order finns nedan:</p>
+
+<h2>Order: #<%= order.order_number %></h2>
+
+<table cellspacing="0" cellpadding="6" style="width: 100%; border: 1px solid #eee;" border="1" bordercolor="#eee">
+<thead>
+	<tr>
+		<th scope="col" style="text-align:left; border: 1px solid #eee;">#</th>
+		<th scope="col" style="text-align:left; border: 1px solid #eee;">Produkt</th>
+		<th scope="col" style="text-align:left; border: 1px solid #eee;">Antal</th>
+		<th scope="col" style="text-align:left; border: 1px solid #eee;">Pris</th>
+	</tr>
+</thead>
+<tbody>
+	<tr>
+	<% for(var i in order.items) { %>
+	<tr>
+		<td style="text-align:left; vertical-align:middle; border: 1px solid #eee;"><%= order.items[i].product.sku %></td>
+		<td style="text-align:left; vertical-align:middle; border: 1px solid #eee;"><%= order.items[i].product.name %></td>
+		<td style="text-align:left; vertical-align:middle; border: 1px solid #eee;"><%= order.items[i].count %></td>
+		<td style="text-align:left; vertical-align:middle; border: 1px solid #eee;">
+		<span class="amount"><%= order.items[i].product.price %></span></td>
+	</tr>
+	<% } %>
+</tr>
+
+
+</tbody>
+<tfoot>
+	<tr>
+		<th scope="row" colspan="3" style="text-align:left; border: 1px solid #eee; border-top-width: 4px;">Kundvagn delsumma:</th>
+		<td style="text-align:left; border: 1px solid #eee; border-top-width: 4px;"><span class="amount"><%= order.subtotal %>&#107;&#114;</span></td>
+	</tr><tr>
+		<th scope="row" colspan="3" style="text-align:left; border: 1px solid #eee; ">Frakt:</th>
+		<td style="text-align:left; border: 1px solid #eee; "><span class="amount"><%= order.shipping_total %>&#107;&#114;</span>&nbsp;<small>via Enhetsfrakt</small></td>
+	</tr><tr>
+		<th scope="row" colspan="3" style="text-align:left; border: 1px solid #eee; ">Moms (25%)</th>
+		<td style="text-align:left; border: 1px solid #eee; "><span class="amount"><%= order.tax_total %>&#107;&#114;</span></td>
+	</tr><tr>
+		<th scope="row" colspan="3" style="text-align:left; border: 1px solid #eee; ">Totalt för ordern:</th>
+		<td style="text-align:left; border: 1px solid #eee; "><span class="amount"><%= order.total %>&#107;&#114;</span></td>
+	</tr>	</tfoot>
+</table>
+
+<br/>
+<h3>Kontaktuppgifter</h3>
+
+<p><strong>E-postadress: </strong><%= order.contact.email %></p>
+<p><strong>Tfn: </strong><%= order.contact.phone %></p>
+
+<h3>Leveransaddress</h3>
+<table cellspacing="0" cellpadding="0" style="width: 100%; vertical-align: top;" border="0">
+
+<tr>
+	<td valign="top" width="50%">
+
+		<p>
+			<%= order.address.company %><br/>
+			<%= order.address.first_name %> <%= order.address.last_name %><br />
+			<%= order.address.address %> <br/>
+			<%= extra_info %>
+		</p>
+	</td>
+</tr>
+
+</table>
+														</div>
+													</td>
+																									</tr>
+																							</table>
+																							<!-- // End Module: Standard Content \\ -->
+																					</td>
+																			</tr>
+																	</table>
+																	<!-- // End Template Body \\ -->
+															</td>
+													</tr>
+												<tr>
+														<td align="center" valign="top">
+																	<!-- // Begin Template Footer \\ -->
+																<table border="0" cellpadding="10" cellspacing="0" width="600" id="templateFooter">
+																		<tr>
+																				<td valign="top" class="footerContent">
+																							<table border="0" cellpadding="10" cellspacing="0" width="100%">
+																									<tr>
+																											<td colspan="2" valign="middle" id="credit" style="border:0; color:#969696; font-family:Arial; font-size:12px; line-height:125%; text-align:center;">
+																												<p>Säkra Dörren™ &#8211; Din Butik För Säkerhetsdörrar<br />
+T: 08-500-91-997<br />
+E: info@sakradorren.se</p>
+																											</td>
+																									</tr>
+
+																							</table>
+																					</td>
+																			</tr>
+																	</table>
+																	<!-- // End Template Footer \\ -->
+															</td>
+													</tr>
+											</table>
+											<br />
+									</td>
+							</tr>
+					</table>
+			</center>
+	</body>
+</html>
