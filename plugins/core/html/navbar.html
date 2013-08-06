@@ -1,7 +1,12 @@
-<div class="navbar " style="float: none; box-shadow: 2px 2px 5px #eee;">
-	<div class="navbar-inner " style="border-radius: 0px;">
-		<ul class="nav nav-pills span9 pull-left" style="float: none;">
-			<a class="brand" href="{{brand.link}}">{{brand.label}}</a>
+<div class="navbar">
+	<div class="navbar-inner">
+		<ul class="nav nav-pills span10">
+			{{#brand_logo}}
+			<a href="{{brand.link}}">
+				<img style="float: left;" alt="" src="{{brand_logo}}"/>
+			</a>
+			{{/brand_logo}}
+			{{^brand_logo}}<a class="brand" href="{{brand.link}}">{{brand.label}}</a>{{/brand_logo}}
 			{{#items}}
 				{{#dropdown}}
 				<li class="dropdown">

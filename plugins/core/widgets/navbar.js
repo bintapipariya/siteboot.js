@@ -49,6 +49,7 @@ Widget.prototype.data = function(data){
 			label: Object.keys(brand)[0],
 			link: brand[Object.keys(brand)[0]]
 		},
+		brand_logo: data["brand_logo"],
 		items: list
 	} 
 	return this; 
