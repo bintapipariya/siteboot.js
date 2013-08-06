@@ -405,13 +405,17 @@ function main(){
 	server.get_widget_or_empty = function(name){
 		if(!(name in widgets)){
 			return {
-				new: function(){throw "Error creating instance of "+name+": New can not be called on default widget! Fix your code!";},
+				new: function(){console.log("Error creating instance of "+name+": New can not be called on default widget! Fix your code!");},
 				init: function(){},
 				render: function(a, b, c, d){d("Default widget!");},
 				data: function(data){return this;}
 			}
 		} 
 		return widgets[name]; 
+	}
+	
+	server.get_widget = function(name){
+		return widgets[name]||null; 
 	}
 	
 	async.series([

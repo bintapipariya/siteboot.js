@@ -76,12 +76,14 @@ livesite.init = function(){
 		livesite.start_editor("div.editable", function(ed) {
 			var data = {}; 
 			var div = $("#"+ed.id)[0]; 
-			ed.save(); 
+			//ed.save(); 
 			
 			var type = $(div).attr("data-object-type"); 
 			var id = $(div).attr("data-object-id"); 
 			var name = $(div).attr("data-property-name"); 
 			var val = ed.getContent();
+			val = val.replace(/<p>&nbsp;<\/p>\n/gi, ''); 
+			ed.setContent(val); 
 			
 			admin.set_property(type, id, name, val, function(error) {
 				if(error) {

@@ -50,12 +50,18 @@ Widget.prototype.render = function(path, args, session, callback){
 		var replace = {}; 
 		// render all the embedded widgets and render the final page
 		async.each(widgets_to_render, function(w, callback){
-			var control = widget.server.get_widget_or_empty(w.id).new(widget.server); 
-			control.data(w.args); 
-			control.render(path, args, session, function(html){
-				replace[w.match] = html; 
+			var control = widget.server.get_widget(w.id); 
+			if(control){
+				control = control.new(x); 
+				control.data(w.args); 
+				control.render(path, args, session, function(html){
+					replace[w.match] = html; 
+					callback(); 
+				}); 
+			} else {
+				replace[w.match] = ""; 
 				callback(); 
-			}); 
+			}
 		}, function(){
 			// replace all the shortcodes with their generated widgets
 			if(!session.user.loggedin){
