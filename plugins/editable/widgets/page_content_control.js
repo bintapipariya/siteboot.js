@@ -35,7 +35,7 @@ Widget.prototype.render = function(path, args, session, callback){
 	var widget = this; 
 	
 	
-	this.server.properties.get_object("page_content_control", path, function(err, obj){
+	this.server.properties.get_object("page_content_control", (widget.model["object_id_prefix"]||"")+path, function(err, obj){
 		if(!obj){
 			obj = {
 				title: "Default title",
@@ -117,13 +117,14 @@ Widget.prototype.render = function(path, args, session, callback){
 				}); 
 			}); 
 			session.render_widgets(widget.widgets, path, args, function(data){
-				data.object_id = path; 
+				data.object_id = (widget.model["object_id_prefix"]||"")+path; 
 				data.content = value; 
 				data.sections = sections; 
 				data.google_title = obj.title;
 				data.google_meta = obj.meta; 
 				data.loggedin = session.user.loggedin; 
-				
+				data.full_width = "span"+(widget.model["width"]||"10"); 
+				data.half_width = "span"+parseInt(widget.model["width"]||"10")/2; 
 				// compute list of fields for SEO
 				var fields = []; 
 				Object.keys(widget.model.extra_fields).map(function(x){fields.push(widget.model.extra_fields[x]);});
@@ -138,9 +139,7 @@ Widget.prototype.render = function(path, args, session, callback){
 
 Widget.prototype.data = function(data){
 	if(data){
-		if("id" in data){
-			this.model.id = data.id; 
-		}
+		for(var key in data) this.model[key] = data[key]; 
 		return this; 
 	} else {
 		return this.model; 

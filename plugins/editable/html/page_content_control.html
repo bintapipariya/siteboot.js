@@ -1,6 +1,6 @@
 {{#loggedin}}
 <div class="row">
-	<div class="span5">
+	<div class="{{half_width}}">
 		<form action="" method="post">
 			<input type="hidden" name="rcpt" value="editable"/>
 			<input type="hidden" name="redirect" value=""/>
@@ -20,7 +20,7 @@
 			</fieldset>
 		</form>
 	</div>
-	<div class="span5">
+	<div class="{{half_width}}">
 		<div class="google_preview">
 			<p style="font-size: 10px; color: #666;">Google preview:</p>
 			<h3 data-id="title-target">{{google_title}}</h3>
@@ -38,7 +38,7 @@
 			{{/sections}}
 		</ul>
 	</div><!--/sidebar-->
-	<div class="span10">
+	<div class="{{full_width}}">
 		<div class="editable editable-content" data-object-type="page_content_control" 
 				data-object-id="{{object_id}}" data-property-name="content" data-error-policy="ignore">
 				{{{content}}}
