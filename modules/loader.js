@@ -73,8 +73,6 @@ exports.LoadModule = function(path, callback){
 		
 	if(!("init" in module)){
 		console.debug("Warning: no init in module "+path); 
-		callback(); 
-		return; 
 	}
 	
 	async.series([

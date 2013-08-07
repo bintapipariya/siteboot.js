@@ -1,6 +1,6 @@
 var mustache = require("mustache");
 var PATH = require("path"); 
-var fs = require("fs"); 
+var fs = require("fs-extra"); 
 var crypto = require("crypto"); 
 
 var db = {}; 
@@ -88,24 +88,23 @@ exports.post = function(path, args, session, callback){
 			console.log("Will save local file as "+target); 
 			
 			var basename = PATH.basename(target); 
-			var local_path = server.vfs.resolve(PATH.dirname(target));
-			if(local_path){
-				local_path = local_path+"/"+basename; 
-				console.log("Will overwrite local file "+local_path); 
-				fs.copy(file.path, local_path, function(err){
-					if(err) {
-						done("Could not overwrite existing file!"); 
-						return; 
-					}
-					console.log("File was successfully saved!"); 
-					done(undefined, {filename: target, message: "Sucessfully uploaded file!"}); 
-					
-					server.vfs.add_index(local_path.substring(0, PATH.dirname(local_path).lastIndexOf("/content")+"/content".length));
-					return;  
-				}); 
-			} else {
-				console.log("Could not resolve directory "+PATH.dirname(target)); 
-			}
+			//var local_path = server.vfs.resolve(PATH.dirname(target));
+			var local_path = server.config.site_path+"/content/"+PATH.dirname(target);
+			fs.mkdirsSync(local_path); 
+			
+			local_path = local_path+"/"+basename; 
+			console.log("Will overwrite local file "+local_path); 
+			fs.copy(file.path, local_path, function(err){
+				if(err) {
+					done("Could not overwrite existing file!"); 
+					return; 
+				}
+				console.log("File was successfully saved!"); 
+				done(undefined, {filename: target, message: "Sucessfully uploaded file!"}); 
+				
+				server.vfs.add_index(local_path.substring(0, PATH.dirname(local_path).lastIndexOf("/content")+"/content".length));
+				return;  
+			}); 
 		}
 		return; 
 	} else if("set_property_value" in args){

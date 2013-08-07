@@ -1,50 +1,57 @@
 Introduction
 ============
 
-LiveSite is web framework developed for node.js with fully featured inline editing. 
+SiteBoot is a package that makes it simple for you to build really cool and editable websites. SiteBoot is packed with features that you can easily use to create a site template. 
 
-The philosophy of LiveSite is: remove all admin panels and just do the edinting inline! We provide you with a filesystem tree where all files are loaded automatically and a versatile plugin system to make your code as modular as possible. 
+Installation
 
-To run livesite you will need node.js: 
-	apt-get install node
-
-Then run the bootstrap script in the livesite directory to install all of the dependencies. 
-
-Then create a new mysql database. 
-
-Then run: 
-node server.js in the livesite directory
-
-Sorry, very little docs have been written at the moment. More will come.. 
-
-USAGE
-===== 
-
-LiveSite is a complete system - it does not need an external server. It all runs on node js and all the modules that are available for it in the npm library. 
-
-To run the server, simply type: 
+	npm install siteboot
 	
-	node server.js 
-	
-In the main project directory. This will load default config and start listening on the default 8000 port. To change the configuration, create a new file called "config-local.js" and make it export a variable called "config" with all the settings. See config.js for an example. 
+Creating a site with SiteBoot is as simple as this: 
 
-DIRECTORY STRUCTURE
-===================
+	var sb = require("siteboot"); 
+	var config = {
+		database: {
+			"hostname": "db_host",
+			"user": "db_user",
+			"password": "db_password",
+			"database": "db_name"
+		},
+		server_port: 8000,
+		auto_login: true
+	}
+	var Site = function(x){
+		
+	}
 
-From this point on, the server loads all the plugins that it can find in /plugins directory, it loads the theme specified in the config and also loads all the widgets and forms that are defined in plugins and the theme. 
+	Site.prototype.init = function(x){
+		this.server = x; 
+		this.message = "Hello World!"; 
+		console.log("Site initialized!"); 
+	}
 
-Implementing a plugin
-=====================
+	Site.prototype.render = function(path, args, session, callback){
+		callback(this.message);
+	}
 
-Coming soon..
-	
+	sb.init(config, function(){
+		sb.boot(new Site());
+	});  
 
-MEDIA UPLOADS
-=============
+This will create a site with the default configuration. You will need to create a database though inside MySQL. SiteBoot uses MySQL. All the required tables will be set up automatically though upon first connection. 
 
-All media uploads are put into the same folder, /uploads/ on the server and each image is renamed to the SHA1_HASH_OF_FILE.ext format. This greatly simplifies how we work with images because now we don't have to care about duplicate media files and we don't need any media browser in the application because we instead simply allow the user to arbitrarily upload files every time they need to embed an image or add some media file to a page. If the uploaded file is exactly the same to a previously uploaded file then the already present version is used. This way we can easily avoid duplicates and keep all media files in the same place. 
+Now you can create a site inside a directory where you will put all the site related content. 
 
-But ALSO, we don't completely eliminate the presence of a media library in the future. Of course a media database can be added in the future by extending the functionality of the upload script. But we can still use the hashing to eliminate duplicates and simplify working with pages on the site. 
+One great benefit of SiteBoot is that it compiles all scripts for you and loads everything automatically. You can put your widgets inside "widgets" folder, then reference them inside the main theme through server.get_widget_or_empty() and render html templates using session.render(). All widgets can be rendered in one go using session.render_widgets(). Then you call the callback that is passed to the render method in order to output the page to the user. 
+
+The rest is handled by siteboot. 
+
+The behavior of post requests is dependent on a few parameters. 
+
+- "redirect": if set then the server will redirect the post request using 301 to the current address. Useful when submitting forms. Otherwise the request is not redirected and JSON will probably be returned instead of a page html. 
+- "rcpt": specify plugin which will receive the post data. Plugin "post" method will be called if it exists. 
+
+There are more options that can be posted directly to the siteboot. For example, siteboot supports contact forms that you can simply enter into the editor on the page and then post to siteboot with special hidden post variables. More documentation on these features will come a little later since it's quite a lot to put down in text. 
 
 License
 =======
