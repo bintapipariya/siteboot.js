@@ -1,0 +1,40 @@
+{
+  "author": "Martin K. Schröder",
+  "name": "blueberry",
+  "description": "The nodejs website framework.",
+  "version": "0.1.1",
+  "repository": {
+    "url": "https://github.com/fantachip/livesite.js.git"
+  },
+  "main": "./server.js",
+  "bin": {},
+  "dependencies": {
+		"http-server": ">0",
+		"path": ">0",
+		"JSON": ">0",
+		"formidable": ">0", 
+		"node-fs": ">0", 
+		"url": ">0", 
+		"process": ">0", 
+		"querystring": ">0", 
+		"crypto": ">0", 
+		"perf-timers": ">0", 
+		"walk": ">0", 
+		"mustache": ">0", 
+		"csv": ">0", 
+		"email-templates": ">0", 
+		"nodemailer": ">0", 
+		"mysql": ">0", 
+		"async": ">0", 
+		"jquery": ">0", 
+		"multipart": ">0", 
+		"sys": ">0", 
+		"posix": ">0", 
+		"glob": ">0"
+	},
+  "devDependencies": {},
+  "optionalDependencies": {},
+  "engines": {
+    "node": "*"
+  }
+}
