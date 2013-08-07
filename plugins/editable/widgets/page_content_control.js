@@ -43,17 +43,20 @@ Widget.prototype.render = function(path, args, session, callback){
 				meta: "Default meta"
 			}
 		}
-		var value = obj.content; 
+		var content = obj.content||""; 
+		var title = obj.title||"";
+		var meta = obj.meta||""; 
+		
 		widget.model.page = obj; 
 		
-		if(!("title" in obj) || obj.title == ""){
+		if(title == ""){
 			// try to extract page title from content
 			var headings = ["h1", "h2", "h3", "h4", "h5"]; 
 			var found = false; 
 			for (var k in headings){
 				var r = $("<html>"+obj.content+"</html>").find(headings[k]); 
 				if(r.length > 0){
-					obj.title = $(r[0]).text(); 
+					obj.title = title = $(r[0]).text(); 
 					found = true; 
 					break; 
 				}
@@ -76,7 +79,7 @@ Widget.prototype.render = function(path, args, session, callback){
 		//console.log("VALUE: "+path+" "+JSON.stringify(value)); 
 		if(!err){
 			// parse the content for shortcodes
-			var matches = value.match(/\[(.+?)\]/g); 
+			var matches = content.match(/\[(.+?)\]/g); 
 			for(var i in matches){
 				var m = matches[i].substr(1, matches[i].length-2) ; 
 				var parts = m.split(":"); 
@@ -107,10 +110,10 @@ Widget.prototype.render = function(path, args, session, callback){
 			// replace all the shortcodes with their generated widgets
 			if(!session.user.loggedin){
 				for(var i in replace)
-					value = value.replace(i, replace[i]); 
+					content = content.replace(i, replace[i]); 
 			}
 			
-			$("<html>"+value+"</html>").find("section").each(function(i, v){
+			$("<html>"+content+"</html>").find("section").each(function(i, v){
 				sections.push({
 					id: $(v).attr("id"),
 					title: $(v).attr("data-title")
@@ -118,10 +121,10 @@ Widget.prototype.render = function(path, args, session, callback){
 			}); 
 			session.render_widgets(widget.widgets, path, args, function(data){
 				data.object_id = (widget.model["object_id_prefix"]||"")+path; 
-				data.content = value; 
+				data.content = content; 
 				data.sections = sections; 
-				data.google_title = obj.title;
-				data.google_meta = obj.meta; 
+				data.google_title = title;
+				data.google_meta = meta; 
 				data.loggedin = session.user.loggedin; 
 				data.full_width = "span"+(widget.model["width"]||"10"); 
 				data.half_width = "span"+parseInt(widget.model["width"]||"10")/2; 
