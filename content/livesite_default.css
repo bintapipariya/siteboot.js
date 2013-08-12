@@ -66,3 +66,13 @@
 	list-style-position: outside;
 	list-style-type: none;
 }
+
+
+.btn-custom {
+    background-color: rgb(199, 56, 0) !important;
+    background-repeat: repeat-x;
+    background-image: linear-gradient(rgb(255, 90, 25), rgb(198, 56, 0));
+    border-color: rgb(198, 56, 0) rgb(198, 56, 0) rgb(179, 51, 0);
+    color: rgb(255, 255, 255) !important;
+    text-shadow: 0px -1px 0px rgba(0, 0, 0, 0.26);
+}

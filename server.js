@@ -465,6 +465,7 @@ function CreateServer(){
 
 exports.init = function(cfg, callback){
 	config = cfg; 
+	if(!("site_path" in config)) config.site_path = process.cwd(); 
 	db = require("./modules/db").connect(config.database, callback);
 }
 

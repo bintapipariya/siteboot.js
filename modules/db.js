@@ -9,27 +9,36 @@ var crypto = require("crypto");
 var users = {}; 
 var properties = {}; 
 var pages = {}; 
+var config = {}; 
 
-exports.connect = function(config, callback){
-	console.log("Initializing database with configuration "+JSON.stringify(config)); 
-	exports.db = mysql.createConnection(config);
-	exports.db.users = users; 
-	exports.db.properties = properties; 
-	exports.db.pages = pages; 
-	exports.db.connect(function(error) {
-		if (error) {
-			CreateDatabase(function(){
-				callback();
-			}); 
-			console.log("ERROR CONNECTING TO DATABASE SERVER: " + error);
-			//process.exit(); 
-		}
-		else {
-			CreateTables(function(){
-				callback();
-			}); 
-		}
-	});
+exports.connect = function(cfg, callback){
+	console.log("Initializing database with configuration "+JSON.stringify(cfg)); 
+	config = cfg; 
+	
+	if(cfg){
+		exports.db = mysql.createConnection(config);
+		exports.db.users = users; 
+		exports.db.properties = properties; 
+		exports.db.pages = pages; 
+		exports.db.connect(function(error) {
+			if (error) {
+				CreateDatabase(function(){
+					callback();
+				}); 
+				//console.log("ERROR CONNECTING TO DATABASE SERVER: " + error);
+				//process.exit(); 
+			}
+			else {
+				CreateTables(function(){
+					callback();
+				}); 
+			}
+		});
+	} else {
+		exports.db = {}; 
+		callback();
+	}
+	
 	return exports.db; 
 }
 
