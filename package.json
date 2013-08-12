@@ -23,7 +23,7 @@
     "walk": "*",
     "mustache": "*",
     "csv": "*",
-    "email-templates": "*",
+    "email-templates-siteboot": "*",
     "nodemailer": "*",
     "mysql": "*",
     "async": "*",
