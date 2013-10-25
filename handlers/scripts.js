@@ -53,6 +53,9 @@ exports.init = function(ctx){
 			load_scripts_from_directory(server.basedir+"/client", cb); 
 		},
 		function(cb){
+			load_scripts_from_directory(server.config.site_path+"/client", cb); 
+		},
+		function(cb){
 			load_scripts("plugins", cb);
 		},
 		function(cb){
@@ -68,11 +71,12 @@ exports.init = function(ctx){
 exports.render = function(path, args, session, done){
 	// output relevant session variables to the browser 
 	// (we don't want to output everything because some stuff is meant for the server only) 
-	var sscripts = "var livesite_session = "+
-		JSON.stringify({
-			sid: session.sid,
-			cart: session.cart,
-			user: session.user
-		})+";\n\n";
+	var session_string = ""; 
+	try{
+		session_string = JSON.stringify(session);
+	} catch(e){
+		console.error("Could not stringify session: "+e); 
+	} 
+	var sscripts = "var livesite_session = "+(session_string || "{}")+";\n\n";
 	done(sscripts+scripts); 
 }

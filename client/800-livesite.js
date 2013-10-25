@@ -47,9 +47,10 @@ admin.get_property = function(obj, id, prop, callback){
 admin.set_property = function(obj, id, prop, val, callback){
 	$.ajax({
 		type:"POST",
-		url: "/edit_helper",
+		url: "/",
 		data: {
 			set_property_value: 1,
+			rcpt: "editable",
 			object_type: obj,
 			object_id: id,
 			property_name: prop, 

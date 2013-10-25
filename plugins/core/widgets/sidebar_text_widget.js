@@ -18,8 +18,8 @@ var Widget = function(x){
 Widget.prototype.data = function(data){
 	if(data){
 		this.model = data; 
-		this.widgets["title"] = this.server.get_widget_or_empty("editable_content").new(this.server).data({id: data.id+"_title"}); 
-		this.widgets["content"] = this.server.get_widget_or_empty("editable_content").new(this.server).data({id: data.id+"_content"}); 
+		this.widgets["title"] = this.server.create_widget("editable_content").data({id: data.id+"_title"}); 
+		this.widgets["content"] = this.server.create_widget("editable_content").data({id: data.id+"_content"}); 
 		return this; 
 	} else {
 		return this.model; 

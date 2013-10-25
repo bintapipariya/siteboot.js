@@ -18,12 +18,14 @@ function LoadScripts(dir, callback){
 		for(var key in files){
 			var file = files[key]; 
 			if(!/\.js$/.test(file)) {
+				console.debug("Skipping "+file+"..."); 
 				continue;
 			}
 			try{
 				var script_name = file.replace(/\.[^/.]+$/, "");
+				console.debug("Loading "+script_name); 
 				var hr = require(dir+"/"+file);
-				if(!("init" in hr)) continue; 
+				//if(!("init" in hr)) continue; 
 				hr.name = script_name; 
 				//hr.init(server, function(){
 				//	HandlerInitCompleted(hr); 
@@ -73,14 +75,14 @@ exports.LoadModule = function(path, callback){
 		
 	if(!("init" in module)){
 		console.debug("Warning: no init in module "+path); 
-	}
-	
+	} 
 	async.series([
 		function(callback){
 			console.debug("Loading html forms from "+path+"/html"); 
 			LoadForms(path+"/html", function(results){
 				module.forms = {}; 
 				for(var key in results){
+					console.debug("Found form "+key); 
 					module.forms[key] = results[key]; 
 				}
 				callback(); 

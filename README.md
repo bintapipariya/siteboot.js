@@ -3,10 +3,17 @@ Introduction
 
 SiteBoot is a package that makes it simple for you to build really cool and editable websites. SiteBoot is packed with features that you can easily use to create a site template. 
 
+With SiteBoot you don't have to use SQL directly! SiteBoot has everything you need to start building your website in an object oriented and robust manner - with NODE, BOOTSTRAP, SEQUELIZE and siteboot components. 
+
 Installation
 
+	cd directory_for_your_new_site
 	npm install siteboot
 	
+This will create sample data inside the directory you are in. 
+ 
+Tutorials
+
 Creating a site with SiteBoot is as simple as this: 
 
 	var sb = require("siteboot"); 
@@ -34,9 +41,8 @@ Creating a site with SiteBoot is as simple as this:
 		callback(this.message);
 	}
 
-	sb.init(config, function(){
-		sb.boot(new Site());
-	});  
+	var sb = require("siteboot").init(new Site(), require("./config").config);
+	sb.boot();  
 
 This will create a site with the default configuration. You will need to create a database though inside MySQL. SiteBoot uses MySQL. All the required tables will be set up automatically though upon first connection. 
 
@@ -56,7 +62,7 @@ There are more options that can be posted directly to the siteboot. For example,
 License
 =======
 
-LiveSite - The Node.js Web Framework
+SiteBoot - The Node.js Web Framework
 Copyright (C) 2013  Martin K. Schröder
 
 This program is free software: you can redistribute it and/or modify

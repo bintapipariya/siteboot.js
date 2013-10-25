@@ -14,10 +14,10 @@ var Widget = function(x){
 	this.server = x; 
 	this.model = {}; 
 	this.widgets = {}; 
-	this.widgets["title"] = x.get_widget_or_empty("editable_content").new(x).data({id: "contact_form_default_title"}); 
-	this.widgets["name"] = x.get_widget_or_empty("editable_content").new(x).data({id: "contact_form_default_name"}); 
-	this.widgets["phone"] = x.get_widget_or_empty("editable_content").new(x).data({id: "contact_form_default_phone"}); 
-	this.widgets["message"] = x.get_widget_or_empty("editable_content").new(x).data({id: "contact_form_default_message"}); 
+	this.widgets["title"] = x.create_widget("editable_content").data({id: "contact_form_default_title"}); 
+	this.widgets["name"] = x.create_widget("editable_content").data({id: "contact_form_default_name"}); 
+	this.widgets["phone"] = x.create_widget("editable_content").data({id: "contact_form_default_phone"}); 
+	this.widgets["message"] = x.create_widget("editable_content").data({id: "contact_form_default_message"}); 
 }
 
 Widget.prototype.render = function(path, args, session, callback){

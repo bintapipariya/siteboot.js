@@ -5,7 +5,7 @@ var Widget = function(x){
 	this.server = x; 
 	this.model = {
 		id: "editable_hero",
-		content: "Default content"
+		content: "Default hero widget content"
 	}; 
 }
 
@@ -32,20 +32,28 @@ Widget.prototype.render = function(path, args, session, callback){
 	var widget = this; 
 	
 	// retreive the widget text and render the widget
-	this.server.db.properties.get("editable_hero", "editable_hero"+widget.model.id, "content", function(error, value){
-		widget.model.content = value||"Edit me!"; 
-		widget.model.editable = session.user.loggedin; 
-		
-		widget.server.vfs.search(wildcard, function(error, files) {
-			if(!error && files.length){
-				public_image_path = files[0]; 
+	this.server.db.objects.properties.find({
+		where: {
+			object_type: "editable_hero",
+			object_id: "editable_hero"+widget.model.id,
+			property_name: "content"
+		}}).success(function(value){
+			if(value){
+				widget.model.content = value.property_value||"Edit me!"; 
+				widget.model.editable = session.user.loggedin; 
 			}
-			var html = session.render("editable_hero_widget", {
-				model: widget.model,
-				background: public_image_path,
+			
+			widget.server.vfs.search(wildcard, function(error, files) {
+				if(!error && files.length){
+					public_image_path = files[0]; 
+				}
+				var html = session.render("editable_hero_widget", {
+					model: widget.model,
+					background: public_image_path,
+				}); 
+				callback(html); 
 			}); 
-			callback(html); 
-		}); 
+			
 	}); 
 	
 }

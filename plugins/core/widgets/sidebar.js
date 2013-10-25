@@ -21,7 +21,7 @@ Widget.prototype.data = function(data){
 	
 	for(var i = 0; i < widgets.length; i++){
 		console.debug("Creating new sidebar widget of type "+widgets[i].type); 
-		var w = self.server.get_widget_or_empty(widgets[i].type).new(self.server).data(widgets[i].data); 
+		var w = self.server.create_widget(widgets[i].type).data(widgets[i].data); 
 		renderlist.push(w); 
 	}
 	this.render_list = renderlist; 

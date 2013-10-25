@@ -4,7 +4,7 @@
   },
   "name": "siteboot",
   "description": "Introduction ============",
-  "version": "0.1.2",
+  "version": "0.2.0beta",
   "repository": {
     "url": "https://github.com/fantachip/livesite.js.git"
   },
@@ -23,7 +23,7 @@
     "walk": "*",
     "mustache": "*",
     "csv": "*",
-    "email-templates-siteboot": "*",
+    "email-templates": "*",
     "nodemailer": "*",
     "mysql": "*",
     "async": "*",
@@ -32,7 +32,8 @@
     "sys": "*",
     "posix": "*",
     "fs-extra": "*",
-    "glob": "*"
+    "glob": "*",
+    "sequelize": "*"
   },
   "devDependencies": {},
   "optionalDependencies": {},
@@ -40,13 +41,7 @@
     "node": "*"
   },
   "scripts": {
-    "start": "node server.js"
-  },
-  "readme": "Introduction\n============\n\nLiveSite is web framework developed for node.js with fully featured inline editing. \n\nThe philosophy of LiveSite is: remove all admin panels and just do the edinting inline! We provide you with a filesystem tree where all files are loaded automatically and a versatile plugin system to make your code as modular as possible. \n\nTo run livesite you will need node.js: \n\tapt-get install node\n\nThen run the bootstrap script in the livesite directory to install all of the dependencies. \n\nThen create a new mysql database. \n\nThen run: \nnode server.js in the livesite directory\n\nSorry, very little docs have been written at the moment. More will come.. \n\nUSAGE\n===== \n\nLiveSite is a complete system - it does not need an external server. It all runs on node js and all the modules that are available for it in the npm library. \n\nTo run the server, simply type: \n\t\n\tnode server.js \n\t\nIn the main project directory. This will load default config and start listening on the default 8000 port. To change the configuration, create a new file called \"config-local.js\" and make it export a variable called \"config\" with all the settings. See config.js for an example. \n\nDIRECTORY STRUCTURE\n===================\n\nFrom this point on, the server loads all the plugins that it can find in /plugins directory, it loads the theme specified in the config and also loads all the widgets and forms that are defined in plugins and the theme. \n\nImplementing a plugin\n=====================\n\nComing soon..\n\t\n\nMEDIA UPLOADS\n=============\n\nAll media uploads are put into the same folder, /uploads/ on the server and each image is renamed to the SHA1_HASH_OF_FILE.ext format. This greatly simplifies how we work with images because now we don't have to care about duplicate media files and we don't need any media browser in the application because we instead simply allow the user to arbitrarily upload files every time they need to embed an image or add some media file to a page. If the uploaded file is exactly the same to a previously uploaded file then the already present version is used. This way we can easily avoid duplicates and keep all media files in the same place. \n\nBut ALSO, we don't completely eliminate the presence of a media library in the future. Of course a media database can be added in the future by extending the functionality of the upload script. But we can still use the hashing to eliminate duplicates and simplify working with pages on the site. \n\nLicense\n=======\n\nLiveSite - The Node.js Web Framework\nCopyright (C) 2013  Martin K. Schröder\n\nThis program is free software: you can redistribute it and/or modify\nit under the terms of the GNU Affero General Public License as\npublished by the Free Software Foundation, either version 3 of the\nLicense, or (at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU Affero General Public License for more details.\n\nYou should have received a copy of the GNU Affero General Public License\nalong with this program.  If not, see <http://www.gnu.org/licenses/>.\n",
-  "readmeFilename": "README.md",
-  "_id": "siteboot@0.1.1",
-  "dist": {
-    "shasum": "d891d67f1381d6e4f4f8cbce4c8e485fd541485c"
-  },
-  "_from": "../livesite.js/livesite/"
+    "start": "node server.js",
+    "install": "node install.js"
+  }
 }

@@ -111,9 +111,8 @@ exports.post = function(path, args, session, callback){
 		if("property_name" in args && "property_value" in args 
 			&& "object_id" in args && "object_type" in args){
 			
-			server.properties.set(args["object_type"], args["object_id"], args["property_name"], args["property_value"],
-				function(){
-					
+			server.db.objects.properties.findOrCreate({object_type: args["object_type"], object_id: args["object_id"], property_name: args["property_name"]}, args).success(function(object){
+				object.updateAttributes(args); 
 			}); 
 		}
 	}
@@ -146,51 +145,16 @@ exports.render = function(path, args, session, done){
 			done("Missing one or more required arguments!"); 
 			return; 
 		}
-		server.properties.get(args["object_type"], args["object_id"], args["property_name"], function(error, value){
-			if(error)
+		server.db.objects.properties.find({
+			where: {
+				object_type: args["object_type"], 
+				object_id: args["object_id"], 
+				property_name: args["property_name"]
+			}}).success(function(value){
+			if(!value)
 				done(ajax_error("No property with these settings was found! ("+JSON.stringify(args)+")")); 
 			else 
 				done(ajax_success(value)); 
 		}); 
 	} 
-	/*
-	if(!("object_type" in args)||!("object_id" in args)||!("property_name" in args)){
-		done("");
-		return; 
-	}
-	
-	db.query().select('*').from("fx_properties")
-		.where("object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]])
-		.execute(function(error, rows, cols){
-		if(error){
-			console.log(error);
-			done("");
-			return; 
-		}
-		if(!rows || rows.length == 0){
-			// do insert
-			db.query().insert("fx_properties", 
-				["object_type", "object_id", "property_name", "property_value"],
-				[args["object_type"], args["object_id"], args["property_name"], args["property_value"]])
-				.execute(function(error){
-					if(error) console.log(error); 
-					done(""); 
-				});
-			return; 
-		}
-		update(); 
-		function update(){
-			var row = rows[0]; 
-			var values = {};
-			values["property_value"] = args["property-value"]; 
-			db.query().update("fx_properties").set(values)
-			.where("object_type = ? and object_id = ? and property_name = ?", [args["object_type"], args["object_id"], args["property_name"]])
-			.execute(function(error){
-				if(error) console.log(error); 
-				
-				done("");
-			});
-			
-		}
-	}); */
 }

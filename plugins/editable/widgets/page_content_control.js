@@ -25,7 +25,7 @@ Widget = function(x){
 		id: "page_content_control" // default id
 	}
 	this.widgets = {}; 
-	this.widgets["content"] = x.get_widget_or_empty("editable_content").new(x).data({field_type: "page_content_control"}); 
+	this.widgets["content"] = x.create_widget("editable_content").data({field_type: "page_content_control"}); 
 	this.model.extra_fields = {
 		title: {title: "Page title", name: "title", type: "text", hint: "Page Title"},
 		meta: {title: "Meta description", name: "meta", type: "text", hint: "Page meta data"}
@@ -35,14 +35,19 @@ Widget.prototype.render = function(path, args, session, callback){
 	var widget = this; 
 	
 	
-	this.server.properties.get_object("page_content_control", (widget.model["object_id_prefix"]||"")+path, function(err, obj){
-		if(!obj){
-			obj = {
-				title: "Default title",
-				content: "Default content",
-				meta: "Default meta"
-			}
-		}
+	this.server.db.objects.properties.findAll({
+		where: {
+			object_id: "page_content_control", 
+			object_id: (widget.model["object_id_prefix"]||"")+path
+		}}).success(function(properties){
+		var obj = {
+			title: "Default title",
+			content: "Default content",
+			meta: "Default meta"
+		}; 
+		properties.map(function(x){
+			obj[x.property_name] = x.property_value;
+		}); 
 		var content = obj.content||""; 
 		var title = obj.title||"";
 		var meta = obj.meta||""; 
@@ -77,19 +82,17 @@ Widget.prototype.render = function(path, args, session, callback){
 		var sections = []; 
 		var widgets_to_render = []; 
 		//console.log("VALUE: "+path+" "+JSON.stringify(value)); 
-		if(!err){
-			// parse the content for shortcodes
-			var matches = content.match(/\[(.+?)\]/g); 
-			for(var i in matches){
-				var m = matches[i].substr(1, matches[i].length-2) ; 
-				var parts = m.split(":"); 
-				var vars = {}; 
-				for(var k = 1; k < parts.length; k++) {
-					var kv = parts[k].split("="); 
-					vars[kv[0]] = kv[1]; 
-				}
-				widgets_to_render.push({match: matches[i], id: parts[0], args: vars}); 
+		// parse the content for shortcodes
+		var matches = content.match(/\[(.+?)\]/g); 
+		for(var i in matches){
+			var m = matches[i].substr(1, matches[i].length-2) ; 
+			var parts = m.split(":"); 
+			var vars = {}; 
+			for(var k = 1; k < parts.length; k++) {
+				var kv = parts[k].split("="); 
+				vars[kv[0]] = kv[1]; 
 			}
+			widgets_to_render.push({match: matches[i], id: parts[0], args: vars}); 
 		}
 		var replace = {}; 
 		// render all the embedded widgets and render the final page
@@ -126,8 +129,8 @@ Widget.prototype.render = function(path, args, session, callback){
 				data.google_title = title;
 				data.google_meta = meta; 
 				data.loggedin = session.user.loggedin; 
-				data.full_width = "span"+(widget.model["width"]||"10"); 
-				data.half_width = "span"+parseInt(widget.model["width"]||"10")/2; 
+				data.full_width = "col-md-"+(widget.model["width"]||"10"); 
+				data.half_width = "col-md-"+parseInt(widget.model["width"]||"10")/2; 
 				// compute list of fields for SEO
 				var fields = []; 
 				Object.keys(widget.model.extra_fields).map(function(x){fields.push(widget.model.extra_fields[x]);});
