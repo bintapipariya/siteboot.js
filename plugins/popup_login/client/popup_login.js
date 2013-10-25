@@ -45,16 +45,18 @@ $(document).ready(function(){
 			$('#login-popover').click(function(){
 				return false; 
 			}); 
-			$('#login-popover').popover({ 
-				html : true,
-				placement: "left",
-				title: function() {
-					return $("#login-popover-head").html();
-				},
-				content: function() {
-					return $("#login-popover-content").html();
-				}
-			});
+			if("popover" in $('#login-popover')){
+				$('#login-popover').popover({ 
+					html : true,
+					placement: "left",
+					title: function() {
+						return $("#login-popover-head").html();
+					},
+					content: function() {
+						return $("#login-popover-content").html();
+					}
+				});
+			}
 		} 
 	}catch(e){
 		alert("Error initializing popup_login plugin! "+e); 

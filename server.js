@@ -607,6 +607,9 @@ SiteBoot.prototype.boot = function(){
 	server.vfs = vfs; 
 	server.theme = {}; 
 	server.client_code = ""; 
+	server.getClientCode = function(session){
+		return "var livesite_session = "+(JSON.stringify(session) || "{}")+";\n\n"+this.client_code; 
+	}; 
 
 	var site = this.site; 
 	

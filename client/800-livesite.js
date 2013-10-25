@@ -5,6 +5,13 @@ var admin = {
 	
 };
 
+if(!livesite_session){
+	livesite_session = {
+		user: {},
+		sid: 0
+	}; 
+}
+
 var livesite = {
 	livebar: {},
 	session: livesite_session,
