@@ -36,6 +36,7 @@ var sys = require("sys");
 var sequelize = require("sequelize"); 
 var util = require("util"); 
 var events = require("events"); 
+var assert = require("assert"); 
 
 var extname = path.extname; 
 
@@ -100,17 +101,18 @@ var AsyncEventEmitter = function(){
 		var callback = argv.pop(); 
 		var c = this.listeners(ev).length; 
 		
-		this.emit.apply(this, [ev].concat(argv).concat([function(){
+		var args = [ev].concat(argv).concat([function(){
 			c--; 
 			if(c == 0) callback(); 
-		}])); 
+		}]); 
+		this.emit.apply(this, args); 
 	}
 }
 
 util.inherits(AsyncEventEmitter, events.EventEmitter); 
 
 var ServerInterface = function(){
-	events.EventEmitter.call(this); 
+	AsyncEventEmitter.call(this); 
 	this._client_code = ""; 
 }
 
@@ -162,74 +164,66 @@ function WidgetValue(widget, args, session){
 	};
 }
 */
-server.SendEmail = function(rcpt_email, caption, template_name, data){
-	var path         = require('path')
-	, templatesDir   = path.resolve(__dirname, '..', 'templates')
-	, emailTemplates = require('email-templates')
-	, nodemailer     = require('nodemailer');
+
+server.mailer = {}; 
+server.mailer.send = function(options, next){
+	var path         = require('path'); 
+	var emailTemplates = require('email-templates'); 
+	var nodemailer     = require('nodemailer');
 	
-	emailTemplates(__dirname+"/email_templates", function(err, template) {
+	if(!options.to || !options.from || !template){
+		console.error("Mailer: You must specify both to, from and template"); 
+		next(""); 
+		return; 
+	}
+	options.subject = options.subject||"(no subject)"; 
+	
+	emailTemplates(config.site_path+'/mailer_templates', function(err, template) {
 		if (err) {
 			console.log(err);
-			throw err; 
-		} else {
-
-			var transportBatch = nodemailer.createTransport("SMTP", {
-				service: "Gmail",
-				auth: {
-					user: config.noreply_email,
-					pass: config.noreply_pass
-				}
-			});
-			
-			// An example users object
-			var rcpt = 
-			[
-				{
-					email: rcpt_email,
-					data: data
-				}
-			];
-
-			var Render = function(data) {
-				this.data = data;
-				this.send = function(err, html, text) {
+			return; 
+		} 
+		var transportBatch = nodemailer.createTransport("SMTP", config.mailer);
+		
+		var Render = function(data) {
+			this.data = data;
+			this.send = function(err, html, text) {
+				if (err) {
+					console.log(err);
+					next(""); 
+					return; 
+				} 
+				next(html); 
+				
+				// send the email
+				transportBatch.sendMail({
+					from: options.from,
+					to: options.to,
+					subject: caption,
+					html: html,
+					generateTextFromHTML: true
+				}, function(err, responseStatus) {
 					if (err) {
 						console.log(err);
 					} else {
-						transportBatch.sendMail({
-							from: (config.noreply_from_name||"Default")+"<"+config.noreply_email+">",
-							to: data.email,
-							subject: caption,
-							html: html,
-							// generateTextFromHTML: true,
-							text: text
-						}, function(err, responseStatus) {
-							if (err) {
-								console.log(err);
-							} else {
-								console.log(responseStatus.message);
-							}
-						});
-					}
-				};
-				this.batch = function(batch) {
-					try{
-						batch(this.data, "email_templates", this.send);
-					} catch(e){
-						console.log("ERROR WHILE SENDING EMAILS: "+e); 
-					}
-				};
-			};
-
-			// Load the template and send the emails
-				template(template_name, true, function(err, batch) {
-					for(var rc in rcpt) {
-						var render = new Render(rcpt[rc]);
-						render.batch(batch);
+						console.log(responseStatus.message);
 					}
 				});
-		}
+			};
+			this.batch = function(batch) {
+				try{
+					batch(this.data, "mailer_templates", this.send);
+				} catch(e){
+					console.log("ERROR WHILE SENDING EMAILS: "+e); 
+				}
+			};
+		};
+
+		// Load the template and send the emails
+		template(template_name, true, function(err, batch) {
+			var render = new Render(options);
+			render.batch(batch);
+		});
 	});
 }
 var User = function(){
@@ -378,20 +372,20 @@ var SiteBoot = function(site, cfg){
 							session = new Session(x); 
 							console.debug("Created new session: "+x.sid);
 							server.emit("session_create", session); 
-							server.emit("session_init", session); 
-							
-							setSessionTimeout(session); 
-							
-							cache.sessions[sid] = session; 
-							next(session); 
+							server.emitAsync("session_init", session, function(){
+								setSessionTimeout(session); 
+								cache.sessions[sid] = session; 
+								next(session); 
+							}); 
 						}); 
 					} else {
 						console.debug("Returning existing session: "+JSON.stringify(x.values)); 
 						session = new Session(x); 
 						setSessionTimeout(session); 
-						server.emit("session_init", session); 
-						cache.sessions[sid] = session; 
-						next(session); 
+						server.emitAsync("session_init", session, function(){
+							cache.sessions[sid] = session; 
+							next(session); 
+						}); 
 					}
 				}); 
 			}
@@ -516,12 +510,13 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 					if(rcpt && rcpt in plugins && "post" in plugins[rcpt]){
 						console.debug("Passing post data to plugin "+rcpt); 
 						plugins[rcpt].post(docpath, args, session, function(response){
-							//copyResponse(response); 
+							copyResponse(response); 
 							next(null, session); 
 						}); 
 					} else if(rcpt && rcpt in widgets && "post" in widgets[rcpt]){
 						console.debug("Passing post data to widget.."); 
-						widgets[rcpt].post(docpath, args, session, function(){
+						widgets[rcpt].post(docpath, args, session, function(response){
+							copyResponse(response); 
 							next(null, session); 
 						}); 
 					} else if("post" in site){
@@ -775,6 +770,7 @@ SiteBoot.prototype.boot = function(){
 						next(); 
 					});
 				},
+				// load client code
 				function(next){
 					if(!fs.existsSync(path+"/client")){
 						next(); 
@@ -787,6 +783,26 @@ SiteBoot.prototype.boot = function(){
 							if(/\.js$/.test(file)){
 								console.log("Loading client script "+path+"/client/"+file); 
 								server.client_code += fs.readFileSync(path+"/client/"+file); 
+							}
+						}
+						next(); 
+					});
+				},
+				// load css code
+				function(next){
+					var dirname= path+"/css/"; 
+					if(!"client_style" in server) server.client_style = ""; 
+					if(!fs.existsSync(dirname)){
+						next(); 
+						return; 
+					}
+					fs.readdir(dirname, function(err, files){
+						if(files) files.sort(); 
+						for(var key in files){
+							var file = files[key]; 
+							if(/\.css$/.test(file)){
+								console.log("Loading stylesheet "+dirname+file); 
+								server.client_style += fs.readFileSync(dirname+file); 
 							}
 						}
 						next(); 
