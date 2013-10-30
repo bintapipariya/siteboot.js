@@ -104,9 +104,19 @@ var AsyncEventEmitter = function(){
 		var callback = argv.pop(); 
 		var c = this.listeners(ev).length; 
 		
+		console.debug("Emitting "+ev+" event..."); 
+		if(c == 0){
+			console.debug("Event "+ev+" completed!"); 
+			callback(); 
+			return; 
+		}
+		
 		var args = [ev].concat(argv).concat([function(){
 			c--; 
-			if(c == 0) callback(); 
+			if(c == 0) {
+				console.debug("Event "+ev+" completed!"); 
+				callback(); 
+			}
 		}]); 
 		this.emit.apply(this, args); 
 	}
@@ -372,6 +382,7 @@ var SiteBoot = function(site, cfg){
 				console.log("Looking up session "+sid+"..."); 
 				
 				if(sid in cache.sessions){
+					console.debug("Returing cached session for "+sid); 
 					next(cache.sessions[sid]); 
 					return; 
 				}
@@ -381,28 +392,30 @@ var SiteBoot = function(site, cfg){
 				var hash = String(crypto.createHash("sha1").update(String(Math.random())).digest("hex")); 
 				if(!sid) sid = hash; 
 				
-				sessions.find({where: {sid: sid}}).success(function(x){
-					if(!x){
-						// create a new session
-						sessions.create({sid: hash}).success(function(x){
-							session = new Session(x); 
-							console.debug("Created new session: "+x.sid);
-							server.emit("session_create", session); 
-							server.emitAsync("session_init", session, function(){
-								setSessionTimeout(session); 
-								cache.sessions[sid] = session; 
+				sessions.findOrCreate({sid: sid}, {sid: hash}).success(function(x, created){
+					if(sid in cache.sessions) {
+						next(cache.sessions[sid]); 
+						return; 
+					}
+					
+					if(created)
+						console.debug("Created new session in database with sid: "+x.sid);
+					else 
+						console.debug("Loaded existing session from database for: "+x.sid+" -- "+JSON.stringify(x.values));
+					
+					session = new Session(x); 
+					cache.sessions[sid] = session; 
+					setSessionTimeout(session); 
+					session.object.save().success(function(){
+						server.emit("session_create", session); 
+						server.emitAsync("session_init", session, function(){
+							setSessionTimeout(session); 
+							session.object.save().success(function(){
 								next(session); 
 							}); 
 						}); 
-					} else {
-						console.debug("Returning existing session: "+JSON.stringify(x.values)); 
-						session = new Session(x); 
-						setSessionTimeout(session); 
-						server.emitAsync("session_init", session, function(){
-							cache.sessions[sid] = session; 
-							next(session); 
-						}); 
-					}
+					}); 
+					
 				}); 
 			}
 		}
@@ -412,8 +425,12 @@ var SiteBoot = function(site, cfg){
 		return db.objects.properties.sync(); 
 	}).success(function(){
 		return db.objects.sessions.sync(); 
+	}).success(function(){
+		console.debug("Purging old sessions..."); 
+		return db.query("delete from sessions where createdAt < '"+(new Date((new Date()).getTime() - 60000*(config.session_ttl||20)))+"'").error(function(err){
+			console.error("Could not purge sessions table: "+err);
+		}); 
 	}); 
-	
 	server.db = db; 
 }
 function setSessionTimeout(session){
@@ -421,11 +438,11 @@ function setSessionTimeout(session){
 		clearTimeout(session.timeout); 
 	session.timeout = setTimeout(function(){
 		console.debug("Removing session object for "+session.sid); 
-		server.emit("session_destroy", session); 
-		
-		session.object.destroy(); 
-		delete cache.sessions[session.sid];
-	}, 60000*20); 
+		server.emitAsync("session_destroy", session, function(){
+			session.object.destroy(); 
+			delete cache.sessions[session.sid];
+		}); 
+	}, 60000*(config.session_ttl||20)); 
 }; 
 
 SiteBoot.prototype.ClientRequest = function(req, res){
@@ -552,7 +569,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 				
 				// files are always served regardless
 				if(fs.existsSync(server.vfs.resolve("/"+docpath))){
-					console.debug("Serving file since it exists: "+path);
+					console.debug("Serving file since it exists: "+docpath);
 					render_default();
 				} else if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
 					console.debug("Passing GET data to plugin "+rcpt); 
@@ -652,7 +669,17 @@ SiteBoot.prototype.boot = function(){
 		if(!(name in server.db.objects)){
 			server.db.objects[name] = server.db.define(name, fields); 
 			return; 
-		} 
+		} else {
+			var schema = server.db.objects[name].rawAttributes; 
+			var options = server.db.objects[name].options; 
+			Object.keys(fields).map(function(f){
+				if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
+				else schema[f] = {type: fields[f]}; 
+			}); 
+			
+			server.db.objects[name] = server.db.define(name, schema, options); 
+			return; 
+		}/*
 		var obj = server.db.objects[name]; 
 		Object.keys(fields).map(function(f){
 			if(f in obj.rawAttributes && f.type != obj.rawAttributes[f].type){
@@ -663,26 +690,18 @@ SiteBoot.prototype.boot = function(){
 				return; 
 			} 
 			// create new field column
-			console.debug("Adding new column"); 
+			console.debug("Adding new column "+f+" to "+obj.tableName); 
 			if(typeof(fields[f]) == "object"){
-				obj.QueryInterface.addColumn(f, fields[f]).success(function(){
-					console.debug("success");
-					process.exit(); 
-				}).error(function(err){
-					console.debug(err); 
-					process.exit(); 
-				}); 
+				obj.QueryInterface.addColumn(f, fields[f]).error(function(){});
+				obj.rawAttributes[f] = fields[f]; 
 				//obj.rawAttributes[f] = fields[f]; 
 			} else {
-				obj.QueryInterface.addColumn(obj.tableName, f, {type: fields[f]}).success(function(){
-					console.debug("Added new column "+f+" to "+obj.tableName); 
-					//process.exit(); 
-				}).error(function(err){
-					//process.exit(); 
-				}); 
+				obj.QueryInterface.addColumn(obj.tableName, f, {type: fields[f]}).error(function(){});
+				obj.rawAttributes[f] = {type: fields[f]}; 
 			}
+			console.debug(JSON.stringify(Object.keys(obj.options))); 
 			
-		}); 
+		}); */
 	}
 	
 	function LoadPlugins(directory, next){
@@ -789,7 +808,7 @@ SiteBoot.prototype.boot = function(){
 							var def = server.db.define(model.name, model.fields); 
 							server.db.objects[def.tableName] = def; 
 							server.db.objects[def.tableName][model.name[0].toUpperCase()+model.name.slice(1)] = model.constructor; 
-							console.debug("Object table name is: "+def.tableName+", constructor: "+model.constructor); 
+							
 							def.sync(); 
 						}); 
 						next(); 
