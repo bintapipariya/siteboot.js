@@ -33,7 +33,8 @@
     "posix": "*",
     "fs-extra": "*",
     "glob": "*",
-    "sequelize": "*"
+    "sequelize": "*",
+    "cluster": "*"
   },
   "devDependencies": {},
   "optionalDependencies": {},

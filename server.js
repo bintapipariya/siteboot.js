@@ -38,6 +38,8 @@ var util = require("util");
 var events = require("events"); 
 var assert = require("assert"); 
 
+var cluster = require("cluster");
+
 var extname = path.extname; 
 
 var config = {};
@@ -81,6 +83,7 @@ var ITEMS_PER_PAGE = 21;
 var cache = {}; 
 
 cache.sessions = {}; 
+cache.mailer_templates = {}; 
 
 var theme = {};
 
@@ -171,19 +174,28 @@ server.mailer.send = function(options, next){
 	var emailTemplates = require('email-templates'); 
 	var nodemailer     = require('nodemailer');
 	
-	if(!options.to || !options.from || !template){
-		console.error("Mailer: You must specify both to, from and template"); 
+	next = next||function(){}; 
+	
+	if(!options.to || !options.from || !options.template){
+		console.error("Mailer: You must specify both to, from and template in options: "+JSON.stringify(options)); 
 		next(""); 
 		return; 
 	}
 	options.subject = options.subject||"(no subject)"; 
 	
-	emailTemplates(config.site_path+'/mailer_templates', function(err, template) {
+	var tpl = {
+		path: __dirname+"/mailer_templates", 
+		template: "default"
+	}
+	if(options.template in cache.mailer_templates) 
+		tpl = cache.mailer_templates[options.template]; 
+	
+	emailTemplates(tpl.path, function(err, template) {
 		if (err) {
 			console.log(err);
 			return; 
 		} 
-		var transportBatch = nodemailer.createTransport("SMTP", config.mailer);
+		var transportBatch = nodemailer.createTransport("SMTP", config.mailer.smtp);
 		
 		var Render = function(data) {
 			this.data = data;
@@ -193,13 +205,12 @@ server.mailer.send = function(options, next){
 					next(""); 
 					return; 
 				} 
-				next(html); 
 				
 				// send the email
 				transportBatch.sendMail({
 					from: options.from,
 					to: options.to,
-					subject: caption,
+					subject: options.subject,
 					html: html,
 					generateTextFromHTML: true
 				}, function(err, responseStatus) {
@@ -208,6 +219,8 @@ server.mailer.send = function(options, next){
 					} else {
 						console.log(responseStatus.message);
 					}
+					
+					next(html); 
 				});
 			};
 			this.batch = function(batch) {
@@ -215,13 +228,16 @@ server.mailer.send = function(options, next){
 					batch(this.data, "mailer_templates", this.send);
 				} catch(e){
 					console.log("ERROR WHILE SENDING EMAILS: "+e); 
+					next(""); 
 				}
 			};
 		};
-
+		
+		console.debug("Using mailer template: "+tpl.path+"/"+tpl.template); 
+		
 		// Load the template and send the emails
-		template(template_name, true, function(err, batch) {
-			var render = new Render(options);
+		template(tpl.template, true, function(err, batch) {
+			var render = new Render(options.data);
 			render.batch(batch);
 		});
 	});
@@ -531,10 +547,19 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 			},  
 			function(session, next){
 				console.debug("Rendering site..."); 
+				var rcpt = args["rcpt"]; 
+				args = query.query; 
+				
 				// files are always served regardless
 				if(fs.existsSync(server.vfs.resolve("/"+docpath))){
 					console.debug("Serving file since it exists: "+path);
 					render_default();
+				} else if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
+					console.debug("Passing GET data to plugin "+rcpt); 
+					plugins[rcpt].render(docpath, args, session, function(response){
+						copyResponse(response); 
+						next(null, session); 
+					}); 
 				} else if("render" in site){
 					site.render(docpath, args, session, function(response){
 						if(!response){
@@ -807,6 +832,27 @@ SiteBoot.prototype.boot = function(){
 						}
 						next(); 
 					});
+				}, 
+				// load mailer templates into cache
+				function(next){
+					var dirname= path+"/mailer_templates/"; 
+					if(!fs.existsSync(dirname)){
+						next(); 
+						return; 
+					}
+					fs.readdir(dirname, function(err, files){
+						if(files) files.sort(); 
+						files.map(function(file){
+							if(fs.statSync(dirname+file).isDirectory()){
+								console.log("Adding mailer template: "+dirname+file); 
+								cache.mailer_templates[file] = {
+									path: dirname,
+									template: file
+								}; 
+							}
+						}); 
+						next(); 
+					});
 				}
 			], function(){
 				console.debug("Loaded module from path "+path); 
@@ -851,11 +897,38 @@ SiteBoot.prototype.boot = function(){
 			LoadPlugins(config.site_path+"/plugins", next); 
 		}
 	], function(){
-		site.init(server, function(){
-			self.StartServer(); 
-			console.log("Server listening...");
-		}); 
+		
+		if (cluster.isMaster) {
+			// this is the master control process
+			console.log("Control process running: PID=" + process.pid);
+
+			// fork as many times as we have CPUs
+			var numCPUs = require("os").cpus().length;
+
+			cluster.fork();
+
+			// handle unwanted worker exits
+			cluster.on("exit", function(worker, code) {
+				if (code != 0) {
+					console.log("Worker crashed! Spawning a replacement.");
+					cluster.fork();
+				}
+			}); 
+		} else {
+			process.on('uncaughtException', function (err) {
+				var crash = "=============================\n";
+				crash += "Program crashed on "+(new Date())+"\n"; 
+				crash += err.stack; 
+				fs.appendFile(server.config.site_path+"/crashlog.log", crash); 
+			});
+			site.init(server, function(){
+				self.StartServer(); 
+				console.log("Server listening...");
+			});
+		}
 	}); 
 	
 }
+
+
 
