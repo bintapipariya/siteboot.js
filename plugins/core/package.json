@@ -1,0 +1,23 @@
+{
+  "author": {
+    "name": "Martin K. Schröder"
+  },
+  "name": "siteboot_core",
+  "description": "SiteBoot core components plugin",
+  "version": "0.2.0beta",
+  "repository": {
+    "url": "https://github.com/mkschreder/siteboot_core.git"
+  },
+  "main": "./install.js",
+  "bin": {},
+  "dependencies": {
+  },
+  "devDependencies": {},
+  "optionalDependencies": {},
+  "engines": {
+    "node": "*"
+  },
+  "scripts": {
+    "install": "node install.js"
+  }
+}
