@@ -426,10 +426,10 @@ var SiteBoot = function(site, cfg){
 	}).success(function(){
 		return db.objects.sessions.sync(); 
 	}).success(function(){
-		console.debug("Purging old sessions..."); 
+		/*console.debug("Purging old sessions..."); 
 		return db.query("delete from sessions where createdAt < '"+(new Date((new Date()).getTime() - 60000*(config.session_ttl||20)))+"'").error(function(err){
 			console.error("Could not purge sessions table: "+err);
-		}); 
+		}); */
 	}); 
 	server.db = db; 
 }
@@ -668,7 +668,6 @@ SiteBoot.prototype.boot = function(){
 	server.registerObjectFields = function(name, fields){
 		if(!(name in server.db.objects)){
 			server.db.objects[name] = server.db.define(name, fields); 
-			return; 
 		} else {
 			var schema = server.db.objects[name].rawAttributes; 
 			var options = server.db.objects[name].options; 
@@ -678,30 +677,8 @@ SiteBoot.prototype.boot = function(){
 			}); 
 			
 			server.db.objects[name] = server.db.define(name, schema, options); 
-			return; 
-		}/*
-		var obj = server.db.objects[name]; 
-		Object.keys(fields).map(function(f){
-			if(f in obj.rawAttributes && f.type != obj.rawAttributes[f].type){
-				console.error("New field type does not match type already in the database: "+f+" - "+f.type); 
-				return; 
-			}
-			if(f in obj.rawAttributes){
-				return; 
-			} 
-			// create new field column
-			console.debug("Adding new column "+f+" to "+obj.tableName); 
-			if(typeof(fields[f]) == "object"){
-				obj.QueryInterface.addColumn(f, fields[f]).error(function(){});
-				obj.rawAttributes[f] = fields[f]; 
-				//obj.rawAttributes[f] = fields[f]; 
-			} else {
-				obj.QueryInterface.addColumn(obj.tableName, f, {type: fields[f]}).error(function(){});
-				obj.rawAttributes[f] = {type: fields[f]}; 
-			}
-			console.debug(JSON.stringify(Object.keys(obj.options))); 
-			
-		}); */
+		}
+		return server.db.objects[name]; 
 	}
 	
 	function LoadPlugins(directory, next){
@@ -805,9 +782,8 @@ SiteBoot.prototype.boot = function(){
 									model.fields[x] = server.db.types[model.fields[x].toString().toUpperCase()]; 
 								}
 							}); 
-							var def = server.db.define(model.name, model.fields); 
-							server.db.objects[def.tableName] = def; 
-							server.db.objects[def.tableName][model.name[0].toUpperCase()+model.name.slice(1)] = model.constructor; 
+							var def = server.registerObjectFields(model.tableName, model.fields); 
+							server.db.objects[model.tableName][model.name] = model.constructor; 
 							
 							def.sync(); 
 						}); 
