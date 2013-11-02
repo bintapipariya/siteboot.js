@@ -5,7 +5,9 @@ var admin = {
 	
 };
 
-if(!livesite_session){
+var livesite_session; 
+
+if(livesite_session == null){
 	livesite_session = {
 		user: {},
 		sid: 0

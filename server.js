@@ -18,6 +18,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **********************************************/
 
+
 var http = require("http");
 var https = require("https");
 var fs = require("fs");
@@ -141,6 +142,10 @@ console._sb_err = console.error;
 
 console.error = function(msg){
 	console._sb_err("ERROR: "+msg); 
+}
+
+console.info = function(msg){
+	console.log("INFO: "+msg); 
 }
 
 /*
@@ -303,12 +308,14 @@ Session.prototype.render_widgets = function(widgets, path, args, callback){
 			cb(); 
 		}
 	}, function(){
-		async.each(Object.keys(widgets), function(k, cb){
+		async.eachSeries(Object.keys(widgets), function(k, cb){
 			if(widgets[k]){
+				var session_data = self[widgets[k].id]||{}; 
 				widgets[k].render(path, args, self, function(x){
 					data[k] = x; 
+					self[widgets[k].id] = session_data; 
 					cb(); 
-				});
+				}, session_data);
 			} else {
 				console.debug("Error: empty widget found in argument for key "+k); 
 				cb(); 
@@ -347,6 +354,8 @@ exports.init = function(site, config){
 
 var SiteBoot = function(site, cfg){
 	this.site = site; 
+	this.inprogress = false; 
+	
 	config = cfg; 
 	if(!("site_path" in config)) config.site_path = process.cwd(); 
 
@@ -446,6 +455,16 @@ function setSessionTimeout(session){
 }; 
 
 SiteBoot.prototype.ClientRequest = function(req, res){
+	var self = this; 
+	
+	if(self.inprogress){
+		setTimeout(function(){
+			self.ClientRequest(req, res); 
+		}, 0); 
+		return; 
+	} 
+	self.inprogress = true; 
+	
 	console.log("============== SERVING NEW REQUEST ==============="); 
 	var cookies = parseCookieString(req.headers.cookie); 
 
@@ -494,7 +513,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 		// default headers
 		var resp = {
 			headers: {
-				"Content-type": "text/plain"
+				"Content-type": "text/html"
 			},
 			code: 200,
 			data: "No data"
@@ -577,6 +596,12 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 						copyResponse(response); 
 						next(null, session); 
 					}); 
+				} else if(rcpt && rcpt in widgets && "render" in widgets[rcpt]){
+					console.debug("Passing GET data to widget: "+JSON.stringify(args)); 
+					widgets[rcpt].render(docpath, args, session, function(response){
+						copyResponse(response); 
+						next(null, session); 
+					}); 
 				} else if("render" in site){
 					site.render(docpath, args, session, function(response){
 						if(!response){
@@ -614,6 +639,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 				res.write(resp.data, resp.type); 
 				res.end(); 
 			}
+			self.inprogress = false; 
 		}); 
 		
 	} catch(e) { // prevent server crash
@@ -621,6 +647,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 		res.writeHead(200, {}); 
 		res.write("Fatal server error occured. Please go to home page."); 
 		res.end(); 
+		self.inprogress = false; 
 	}
 }
 
@@ -629,7 +656,7 @@ SiteBoot.prototype.StartServer = function(){
 	server.http = http.createServer(function(req, res){
 		self.ClientRequest(req, res); 
 	});
-	server.http.listen(config.server_port);
+	server.http.listen(config.server_port||8000);
 }
 
 SiteBoot.prototype.boot = function(){
@@ -658,6 +685,16 @@ SiteBoot.prototype.boot = function(){
 			var widget = widget_types[c].new(server); 
 			if(!widget) return widgets_types["default"].new(server); 
 			widget.id = c+widget_counter; 
+			widget.name = c; 
+			if(0){
+				widget.data = function(data){
+					console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					console.error("!!!!! THIS FUNCTION IS DEPRECATED: widget.data()");
+					console.error("!!!!! CALLED FOR "+widget.name); 
+					console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"); 
+					process.exit(); 
+				}
+			}
 			widget_counter++; 
 			widgets[widget.id] = widget; 
 			return widget; 
@@ -672,6 +709,7 @@ SiteBoot.prototype.boot = function(){
 			var schema = server.db.objects[name].rawAttributes; 
 			var options = server.db.objects[name].options; 
 			Object.keys(fields).map(function(f){
+				console.info("Registering field "+f+" for "+name+"!"); 
 				if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
 				else schema[f] = {type: fields[f]}; 
 			}); 
@@ -684,6 +722,10 @@ SiteBoot.prototype.boot = function(){
 	function LoadPlugins(directory, next){
 		fs.readdir(directory, function(err, files) {
 			var pl = []; 
+			if(!files){
+				next(); 
+				return; 
+			}
 			async.each(files||[], function(file, next){
 				fs.stat(directory + '/' + file, function(err, stats) {
 					if(stats.isDirectory()) {
@@ -810,8 +852,8 @@ SiteBoot.prototype.boot = function(){
 				},
 				// load css code
 				function(next){
-					var dirname= path+"/css/"; 
-					if(!"client_style" in server) server.client_style = ""; 
+					var dirname = path+"/css/"; 
+					if(!("client_style" in server)) server.client_style = ""; 
 					if(!fs.existsSync(dirname)){
 						next(); 
 						return; 
@@ -822,7 +864,9 @@ SiteBoot.prototype.boot = function(){
 							var file = files[key]; 
 							if(/\.css$/.test(file)){
 								console.log("Loading stylesheet "+dirname+file); 
-								server.client_style += fs.readFileSync(dirname+file); 
+								var css = fs.readFileSync(dirname+file); 
+								if(css)
+									server.client_style += css; 
 							}
 						}
 						next(); 
@@ -892,7 +936,12 @@ SiteBoot.prototype.boot = function(){
 			LoadPlugins(config.site_path+"/plugins", next); 
 		}
 	], function(){
-		
+		site.init(server, function(){
+				self.StartServer(); 
+				server_started = true; 
+				console.log("Server listening...");
+			});
+		return; 
 		if (cluster.isMaster) {
 			// this is the master control process
 			console.log("Control process running: PID=" + process.pid);
@@ -916,8 +965,17 @@ SiteBoot.prototype.boot = function(){
 				crash += err.stack; 
 				fs.appendFile(server.config.site_path+"/crashlog.log", crash); 
 			});
+			
+			var server_started = false; 
+			setTimeout(function(){
+				if(!server_started) {
+					console.error("Site is taking too long to start! did you forget to call 'next' in the site 'init' method?"); 
+					process.exit(); 
+				}
+			}, 30000); 
 			site.init(server, function(){
 				self.StartServer(); 
+				server_started = true; 
 				console.log("Server listening...");
 			});
 		}
