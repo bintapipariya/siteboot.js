@@ -38,6 +38,7 @@ var sequelize = require("sequelize");
 var util = require("util"); 
 var events = require("events"); 
 var assert = require("assert"); 
+var Q = require("q"); 
 
 var cluster = require("cluster");
 
@@ -183,6 +184,7 @@ function WidgetValue(widget, args, session){
 }
 */
 
+server.q = Q; 
 server.mailer = {}; 
 server.mailer.send = function(options, next){
 	var path         = require('path'); 
@@ -257,6 +259,7 @@ server.mailer.send = function(options, next){
 		});
 	});
 }
+
 var User = function(){
 	this.loggedin = false; 
 	this.username = "default";
@@ -280,6 +283,99 @@ Session.prototype.save = function(){
 	this.object.save(); 
 }
 
+server.render = function(template, fragments){
+	var proms = []; 
+	var result = Q.defer(); 
+	var r = Q.defer(); 
+	var data = {}; 
+	Object.keys(fragments).map(function(x){
+		
+		if(typeof fragments[x] == "object" && "done" in fragments[x]){
+			proms.push([x, fragments[x] ]); 
+		} else {
+			data[x] = fragments[x]; 
+		}
+	}); 
+	async.eachSeries(proms, function(x, next){
+		var timeout = setTimeout(function(){
+			console.error("Rendering timed out for "+x[0]);
+			data[x[0]] = "Timed out!"; 
+			next(); 
+		}, 1000); 
+		x[1].done(function(html){
+			clearTimeout(timeout); 
+			data[x[0]] = html; 
+			next(); 
+		}); 
+	}, function(){
+		console.debug("DONE RENDERING!"); 
+		result.resolve(mustache.render(forms[template]||"", data)); 
+	}); 
+	return result.promise; 
+}
+
+server.defer = function(){
+	return Q.defer(); 
+}
+
+server.create_widget = function(c, options){
+	if(!(c in widget_types) || !("new" in widget_types[c])){
+		console.debug("Widget type "+c+" does not exist!"); 
+		return widget_types["default"].new(server); 
+	}
+	
+	var widget = widget_types[c].new(server); 
+	if(!widget) return widgets_types["default"].new(server); 
+	
+	widget.id = c+widget_counter; 
+	widget.name = c; 
+	widget_counter++; 
+	
+	if(!("data" in widget)){
+		widget.data = function(d){
+			if(d) {
+				this.model = d;
+				return this.model; 
+			} else {
+				return this.model; 
+			}
+		}
+	}
+	
+	widget.addWidget = function(name, id, settings){
+		this[name] = this.server.create_widget(id); 
+		this[name].data(settings); 
+	}
+	
+	if("init" in widget)
+		widget.init(server); 
+		
+	if(options) widget.data(options); 
+	
+	widgets[widget.id] = widget; 
+	
+	console.debug("Created widget "+c); 
+	
+	return widget; 
+}
+
+server.registerObjectFields = function(name, fields){
+	if(!(name in server.db.objects)){
+		server.db.objects[name] = server.db.define(name, fields); 
+	} else {
+		var schema = server.db.objects[name].rawAttributes; 
+		var options = server.db.objects[name].options; 
+		Object.keys(fields).map(function(f){
+			console.info("Registering field "+f+" for "+name+"!"); 
+			if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
+			else schema[f] = {type: fields[f]}; 
+		}); 
+		
+		server.db.objects[name] = server.db.define(name, schema, options); 
+	}
+	return server.db.objects[name]; 
+}
+	
 Session.prototype.render = function(template, args){
 	var session = this; 
 	var params = {};
@@ -348,6 +444,14 @@ exports.shutdown = function(){
 	server.http.close(); 
 }
 
+/*
+function renderWidgets(req, res){
+	var self = this; 
+	if(!self._widgets) return {}; 
+	Object.keys(self._widgets).map(function(x){
+		result[x] = self._widgets.render(req, res)
+}
+*/
 exports.init = function(site, config){
 	return new SiteBoot(site, config); 
 }
@@ -479,25 +583,28 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 	try {
 		// Default response handler
 		var renderer = {
-			render: function(path, args, session, next){
+			render: function(req){
+				var res = Q.defer(); 
+				var path = req.path; 
+				
 				var filepath = vfs.resolve("/"+path); 
 				console.debug("Trying to serve ordinary file "+filepath+" ("+path+")..."); 
 				if(!filepath){
-					next(); 
-					return;
+					res.resolve(); 
+					return res.promise;
 				}
 				fs.readFile(filepath, "binary", function(err, data){
 					if(err) {
-						next({
+						res.resolve({
 							code: 404,
 							data: "Not found!"
 						});  
-						return; 
+						return res.promise; 
 					}
 					
 					var headers = {}; 
 					
-					next({
+					res.resolve({
 						code: 200,
 						headers: {
 							"Content-type": mime_types[extname(path)],
@@ -507,6 +614,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 						type: "binary"
 					});  
 				});
+				return res.promise; 
 			}
 		};
 		
@@ -516,7 +624,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 				"Content-type": "text/html"
 			},
 			code: 200,
-			data: "No data"
+			data: "Default data"
 		}
 		
 		function copyResponse(response){
@@ -555,24 +663,40 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 				
 				var form = new formidable.IncomingForm();
 				form.parse(req, function(err, fields, files) {
+					if(req.method != "POST"){
+						next(null, session); 
+						return; 
+					}
 					console.debug("FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
+					
 					Object.keys(fields).map(function(k){args[k] = fields[k]; });
 					
 					var rcpt = args["rcpt"]; 
 					if(rcpt && rcpt in plugins && "post" in plugins[rcpt]){
 						console.debug("Passing post data to plugin "+rcpt); 
-						plugins[rcpt].post(docpath, args, session, function(response){
+						plugins[rcpt].post({
+							path: docpath,
+							args: args, 
+							session: session}).done(function(response){
 							copyResponse(response); 
 							next(null, session); 
 						}); 
 					} else if(rcpt && rcpt in widgets && "post" in widgets[rcpt]){
 						console.debug("Passing post data to widget.."); 
-						widgets[rcpt].post(docpath, args, session, function(response){
+						widgets[rcpt].post({
+							path: docpath,
+							args: args, 
+							session: session})
+						.done(function(response){
+							delete args["rcpt"];  
 							copyResponse(response); 
 							next(null, session); 
 						}); 
 					} else if("post" in site){
-						site.post(docpath, args, session, function(response){
+						site.post({
+							path: docpath,
+							args: args, 
+							session: session}).done(function(response){
 							copyResponse(response); 
 							next(null, session);
 						}); 
@@ -592,18 +716,29 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 					render_default();
 				} else if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
 					console.debug("Passing GET data to plugin "+rcpt); 
-					plugins[rcpt].render(docpath, args, session, function(response){
+					plugins[rcpt].render({
+							path: docpath,
+							args: args, 
+							session: session}).done(function(response){
 						copyResponse(response); 
 						next(null, session); 
 					}); 
 				} else if(rcpt && rcpt in widgets && "render" in widgets[rcpt]){
 					console.debug("Passing GET data to widget: "+JSON.stringify(args)); 
-					widgets[rcpt].render(docpath, args, session, function(response){
+					widgets[rcpt].render({
+							path: docpath,
+							args: args, 
+							session: session}).done(function(response){
 						copyResponse(response); 
 						next(null, session); 
 					}); 
 				} else if("render" in site){
-					site.render(docpath, args, session, function(response){
+					console.debug("Calling site render..."); 
+					site.render({
+							path: docpath,
+							args: args, 
+							session: session})
+					.done(function(response){
 						if(!response){
 							console.debug("Site did not render.. using default render!"); 
 							render_default(); 
@@ -616,7 +751,10 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 					render_default(); 
 				}
 				function render_default(){
-					renderer.render(docpath, args, session, function(resp){
+					renderer.render({
+							path: docpath,
+							args: args, 
+							session: session}).done(function(resp){
 						copyResponse(resp); 
 						next(null, session);
 					}); 
@@ -665,59 +803,20 @@ SiteBoot.prototype.boot = function(){
 	
 	var self = this; 
 	
+	server.q = Q; 
 	server.config = config;
 	server.basedir = BASEDIR; 
 	server.widgets = widgets; 
 	server.vfs = vfs; 
 	server.theme = {}; 
 	server.client_code = ""; 
+	server.client_style = ""; 
+	
 	server.getClientCode = function(session){
 		return "var livesite_session = "+(JSON.stringify(session) || "{}")+";\n\n"+this.client_code; 
 	}; 
 
 	var site = this.site; 
-	
-	server.create_widget = function(c){
-		if(!(c in widget_types)){
-			console.debug("Widget type "+c+" does not exist!"); 
-			return widget_types["default"].new(server); 
-		} else if("new" in widget_types[c]){
-			var widget = widget_types[c].new(server); 
-			if(!widget) return widgets_types["default"].new(server); 
-			widget.id = c+widget_counter; 
-			widget.name = c; 
-			if(0){
-				widget.data = function(data){
-					console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					console.error("!!!!! THIS FUNCTION IS DEPRECATED: widget.data()");
-					console.error("!!!!! CALLED FOR "+widget.name); 
-					console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"); 
-					process.exit(); 
-				}
-			}
-			widget_counter++; 
-			widgets[widget.id] = widget; 
-			return widget; 
-		}
-		return widget_types["default"].new(server); 
-	}
-	
-	server.registerObjectFields = function(name, fields){
-		if(!(name in server.db.objects)){
-			server.db.objects[name] = server.db.define(name, fields); 
-		} else {
-			var schema = server.db.objects[name].rawAttributes; 
-			var options = server.db.objects[name].options; 
-			Object.keys(fields).map(function(f){
-				console.info("Registering field "+f+" for "+name+"!"); 
-				if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
-				else schema[f] = {type: fields[f]}; 
-			}); 
-			
-			server.db.objects[name] = server.db.define(name, schema, options); 
-		}
-		return server.db.objects[name]; 
-	}
 	
 	function LoadPlugins(directory, next){
 		fs.readdir(directory, function(err, files) {
@@ -936,11 +1035,11 @@ SiteBoot.prototype.boot = function(){
 			LoadPlugins(config.site_path+"/plugins", next); 
 		}
 	], function(){
-		site.init(server, function(){
-				self.StartServer(); 
-				server_started = true; 
-				console.log("Server listening...");
-			});
+		site.init(server).done(function(){
+			self.StartServer(); 
+			server_started = true; 
+			console.log("Server listening...");
+		});
 		return; 
 		if (cluster.isMaster) {
 			// this is the master control process

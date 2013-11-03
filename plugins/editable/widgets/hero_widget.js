@@ -26,7 +26,13 @@ Widget.prototype.data = function(data){
 	else return this.model; 
 }
 
-Widget.prototype.render = function(path, args, session, callback){
+Widget.prototype.render = function(req){
+	var args = req.args; 
+	var session = req.session; 
+	var path = req.path; 
+	var result = this.server.defer(); 
+	function done(x){result.resolve(x);}
+	var self = this; 
 	var wildcard = "/editable/hero_bg_"+this.model.id+"*";
 	var public_image_path = "/editable/hero_bg_default.jpg";
 	var widget = this; 
@@ -47,15 +53,14 @@ Widget.prototype.render = function(path, args, session, callback){
 				if(!error && files.length){
 					public_image_path = files[0]; 
 				}
-				var html = session.render("editable_hero_widget", {
+				self.server.render("editable_hero_widget", {
 					model: widget.model,
 					background: public_image_path,
-				}); 
-				callback(html); 
+				}).done(done); 
 			}); 
 			
 	}); 
-	
+	return result.promise; 
 }
 
 exports.render = function(path, args, session, callback){

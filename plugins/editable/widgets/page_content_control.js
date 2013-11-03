@@ -15,25 +15,26 @@ exports.new = function(x){
 
 var JSON = require("JSON"); 
 
-exports.render = function(path, args, session, callback){
-	callback("Deprecated method!"); 
-}
-
 Widget = function(x){
 	this.server = x; 
 	this.model = {
 		id: "page_content_control" // default id
 	}
 	this.widgets = {}; 
-	this.widgets["content"] = x.create_widget("editable_content").data({field_type: "page_content_control"}); 
+	this.content = x.create_widget("editable_content").data({field_type: "page_content_control"}); 
 	this.model.extra_fields = {
 		title: {title: "Page title", name: "title", type: "text", hint: "Page Title"},
 		meta: {title: "Meta description", name: "meta", type: "text", hint: "Page meta data"}
 	}
 }
-Widget.prototype.render = function(path, args, session, callback){
+Widget.prototype.render = function(req){
 	var widget = this; 
-	
+	var self = this; 
+	var args = req.args; 
+	var session = req.session; 
+	var path = req.path; 
+	var result = this.server.defer(); 
+	function done(x){result.resolve(x);}
 	
 	this.server.db.objects.properties.findAll({
 		where: {
@@ -122,25 +123,26 @@ Widget.prototype.render = function(path, args, session, callback){
 					title: $(v).attr("data-title")
 				}); 
 			}); 
-			session.render_widgets(widget.widgets, path, args, function(data){
-				data.object_id = (widget.model["object_id_prefix"]||"")+path; 
-				data.content = content; 
-				data.sections = sections; 
-				data.google_title = title;
-				data.google_meta = meta; 
-				data.loggedin = session.user.loggedin; 
-				data.full_width = "col-md-"+(widget.model["width"]||"10"); 
-				data.half_width = "col-md-"+parseInt(widget.model["width"]||"10")/2; 
-				// compute list of fields for SEO
-				var fields = []; 
-				Object.keys(widget.model.extra_fields).map(function(x){fields.push(widget.model.extra_fields[x]);});
-				data.extra_fields = fields; 
-				
-				var html = session.render("editable_page_content_control", data); 
-				callback(html); 
-			}); 
+			var data = {}; 
+			data.object_id = (widget.model["object_id_prefix"]||"")+path; 
+			data.content = self.content; 
+			data.content = content; 
+			data.sections = sections; 
+			data.google_title = title;
+			data.google_meta = meta; 
+			data.loggedin = session.user.loggedin; 
+			data.full_width = "col-md-"+(widget.model["width"]||"10"); 
+			data.half_width = "col-md-"+parseInt(widget.model["width"]||"10")/2; 
+			// compute list of fields for SEO
+			var fields = []; 
+			Object.keys(widget.model.extra_fields).map(function(x){fields.push(widget.model.extra_fields[x]);});
+			data.extra_fields = fields; 
+			
+			self.server.render("editable_page_content_control", data).done(done);  
+			
 		}); 
 	}); 
+	return result.promise; 
 }
 
 Widget.prototype.data = function(data){

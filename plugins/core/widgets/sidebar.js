@@ -21,24 +21,29 @@ Widget.prototype.data = function(data){
 	
 	for(var i = 0; i < widgets.length; i++){
 		console.debug("Creating new sidebar widget of type "+widgets[i].type); 
-		var w = self.server.create_widget(widgets[i].type).data(widgets[i].data); 
+		var w = self.server.create_widget(widgets[i].type); 
+		if("data" in w) w.data(widgets[i].data); 
+		else console.debug("No data method found in w.name"); 
 		renderlist.push(w); 
 	}
 	this.render_list = renderlist; 
 	return this; 
 }
 
-Widget.prototype.render = function(path, args, session, done){
+Widget.prototype.render = function(req){
 	// render all the widgets
 	var widgets = this.render_list;  
 	var self = this; 
-	session.render_widgets(widgets, path, args, function(data){
-		var html = ""; 
-		Object.keys(data).map(function(x){
-			html += data[x]; 
+	var result = this.server.defer(); 
+	async.eachSeries(widgets, function(x, next){
+		x.render(req).done(function(html){
+			page += html; 
+			next(); 
 		}); 
-		done(html); 
+	}, function(){
+		result.resolve(page); 
 	}); 
+	return result.promise; 
 }
 
 exports.render = function(path, args, session, done){

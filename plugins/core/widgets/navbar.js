@@ -36,9 +36,8 @@ var Widget = function(x){
 	this.server = x; 
 }
 
-Widget.prototype.render = function(path, args, session, callback){
-	var html = session.render("core_navbar", this.model); 
-	callback(html); 
+Widget.prototype.render = function(req){
+	return this.server.render("core_navbar", this.model); 
 }
 
 Widget.prototype.data = function(data){
@@ -87,8 +86,4 @@ exports.init = function(x){
 
 exports.new = function(x){
 	return new Widget(x); 
-}
-	
-exports.render = function(path, args, session, callback){
-	callback("None"); 
 }
