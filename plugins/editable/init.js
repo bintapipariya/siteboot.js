@@ -61,7 +61,12 @@ function ajax_error(msg, data){
 	return ajax_success(msg, {success: false}); 
 }
 
-exports.post = function(path, args, session, callback){
+exports.post = function(req){
+	var path = req.path; 
+	var session = req.session; 
+	var args = req.args; 
+	var result = server.defer(); 
+	
 	var cbCalled = false; 
 	console.log("EDIT HELPER: POST: "+JSON.stringify(args)); 
 	
@@ -140,16 +145,21 @@ exports.post = function(path, args, session, callback){
 	function done(err, obj) {
     if (!cbCalled) {
       if(err)
-				callback(ajax_error(err));
+				result.resolve(ajax_error(err));
 			else
-				callback(ajax_success("Success!", obj)); 
+				result.resolve(ajax_success("Success!", obj)); 
       cbCalled = true;
     }
   }
+  return result.promise; 
 }
 
-exports.render = function(path, args, session, done){ 
+exports.render = function(req){ 
 	var widgets = server.widgets; 
+	var path = req.path; 
+	var session = req.session; 
+	var args = req.args; 
+	var result = server.defer(); 
 	
 	console.log("Rendering edit_helper page: "+JSON.stringify(args));
 	if("get_property_value" in args){
@@ -173,9 +183,10 @@ exports.render = function(path, args, session, done){
 				property_name: args["property_name"]
 			}}).success(function(value){
 			if(!value)
-				done(ajax_error("No property with these settings was found! ("+JSON.stringify(args)+")")); 
+				result.resolve(ajax_error("No property with these settings was found! ("+JSON.stringify(args)+")")); 
 			else 
-				done(ajax_success(value)); 
+				result.resolve(ajax_success(value)); 
 		}); 
 	} 
+	return result.promise; 
 }

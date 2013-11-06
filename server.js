@@ -297,18 +297,19 @@ server.render = function(template, fragments){
 		}
 	}); 
 	async.eachSeries(proms, function(x, next){
+		console.debug("Rendering fragment "+x[0]+" for "+template); 
 		var timeout = setTimeout(function(){
 			console.error("Rendering timed out for "+x[0]);
 			data[x[0]] = "Timed out!"; 
 			next(); 
-		}, 1000); 
+		}, 30000); 
 		x[1].done(function(html){
+			console.debug("Done rendering fragment "+x[0]+" for "+template); 
 			clearTimeout(timeout); 
 			data[x[0]] = html; 
 			next(); 
 		}); 
 	}, function(){
-		console.debug("DONE RENDERING!"); 
 		result.resolve(mustache.render(forms[template]||"", data)); 
 	}); 
 	return result.promise; 
@@ -560,7 +561,7 @@ function setSessionTimeout(session){
 
 SiteBoot.prototype.ClientRequest = function(req, res){
 	var self = this; 
-	
+	/*
 	if(self.inprogress){
 		setTimeout(function(){
 			self.ClientRequest(req, res); 
@@ -568,7 +569,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 		return; 
 	} 
 	self.inprogress = true; 
-	
+	*/
 	console.log("============== SERVING NEW REQUEST ==============="); 
 	var cookies = parseCookieString(req.headers.cookie); 
 
@@ -1035,12 +1036,6 @@ SiteBoot.prototype.boot = function(){
 			LoadPlugins(config.site_path+"/plugins", next); 
 		}
 	], function(){
-		site.init(server).done(function(){
-			self.StartServer(); 
-			server_started = true; 
-			console.log("Server listening...");
-		});
-		return; 
 		if (cluster.isMaster) {
 			// this is the master control process
 			console.log("Control process running: PID=" + process.pid);
@@ -1072,7 +1067,7 @@ SiteBoot.prototype.boot = function(){
 					process.exit(); 
 				}
 			}, 30000); 
-			site.init(server, function(){
+			site.init(server).done(function(){
 				self.StartServer(); 
 				server_started = true; 
 				console.log("Server listening...");
