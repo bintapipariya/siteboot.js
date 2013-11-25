@@ -39,6 +39,7 @@ var util = require("util");
 var events = require("events"); 
 var assert = require("assert"); 
 var Q = require("q"); 
+var jquery = require("jquery");
 
 var cluster = require("cluster");
 
@@ -69,14 +70,16 @@ var mime_types = {
 var DefaultWidget = function(x){
 	this.server = x; 
 }
-DefaultWidget.prototype.render = function(path, args, session, next){
-	next("Default"); 
+DefaultWidget.prototype.render = function(req){
+	var r = Q.defer(); 
+	r.resolve("[widget not found]"); 
+	return r.promise; 
 }
 
 widget_types["default"] = {
 	new: function(x){
 		return new DefaultWidget(x); 
-	}
+	},
 }; 
 
 var BASEDIR = __dirname+"/"; 
@@ -285,24 +288,26 @@ Session.prototype.save = function(){
 
 server.render = function(template, fragments){
 	var proms = []; 
-	var result = Q.defer(); 
-	var r = Q.defer(); 
+	var result = Q.defer();  
+	
 	var data = {}; 
+	if(!fragments) fragments = {}; 
+	
 	Object.keys(fragments).map(function(x){
-		
 		if(typeof fragments[x] == "object" && "done" in fragments[x]){
 			proms.push([x, fragments[x] ]); 
 		} else {
 			data[x] = fragments[x]; 
 		}
 	}); 
+	// render all promises
 	async.eachSeries(proms, function(x, next){
 		console.debug("Rendering fragment "+x[0]+" for "+template); 
 		var timeout = setTimeout(function(){
 			console.error("Rendering timed out for "+x[0]);
 			data[x[0]] = "Timed out!"; 
 			next(); 
-		}, 30000); 
+		}, 2000); 
 		x[1].done(function(html){
 			console.debug("Done rendering fragment "+x[0]+" for "+template); 
 			clearTimeout(timeout); 
@@ -310,6 +315,8 @@ server.render = function(template, fragments){
 			next(); 
 		}); 
 	}, function(){
+		var form = forms[template]||""; 
+		console.debug("Rendering template "+template); 
 		result.resolve(mustache.render(forms[template]||"", data)); 
 	}); 
 	return result.promise; 
@@ -320,13 +327,17 @@ server.defer = function(){
 }
 
 server.create_widget = function(c, options){
+	
 	if(!(c in widget_types) || !("new" in widget_types[c])){
 		console.debug("Widget type "+c+" does not exist!"); 
 		return widget_types["default"].new(server); 
 	}
 	
-	var widget = widget_types[c].new(server); 
-	if(!widget) return widgets_types["default"].new(server); 
+	var x = widget_types[c].server||server; 
+	console.debug(x); 
+	
+	var widget = widget_types[c].new(x); 
+	if(!widget) return widgets_types["default"].new(x); 
 	
 	widget.id = c+widget_counter; 
 	widget.name = c; 
@@ -361,22 +372,38 @@ server.create_widget = function(c, options){
 }
 
 server.registerObjectFields = function(name, fields){
+	var table = {}; 
+	var self = this; 
+	
 	if(!(name in server.db.objects)){
-		server.db.objects[name] = server.db.define(name, fields); 
+		server.db.objects[name] = table = server.db.define(name, fields); 
+		Object.keys(fields).map(function(f){
+			self.db.getQueryInterface().changeColumn(table.tableName, f, fields[f]); 
+		}); 
 	} else {
-		var schema = server.db.objects[name].rawAttributes; 
-		var options = server.db.objects[name].options; 
+		var table = server.db.objects[name]; 
+		var schema = table.rawAttributes; 
+		var options = table.options; 
 		Object.keys(fields).map(function(f){
 			console.info("Registering field "+f+" for "+name+"!"); 
 			if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
 			else schema[f] = {type: fields[f]}; 
+			
+			self.db.getQueryInterface().changeColumn(table.tableName, f, schema[f]); 
 		}); 
-		
 		server.db.objects[name] = server.db.define(name, schema, options); 
 	}
 	return server.db.objects[name]; 
 }
-	
+
+server.pool = {
+	get: function(model){
+		if(model in server.db.objects){
+			return server.db.objects[model]; 
+		}
+	}
+}
+
 Session.prototype.render = function(template, args){
 	var session = this; 
 	var params = {};
@@ -445,6 +472,38 @@ exports.shutdown = function(){
 	server.http.close(); 
 }
 
+var ServerObject = function(table){
+	this.table = table; 
+}
+
+ServerObject.prototype.create = function(opts){
+	var result = Q.defer(); 
+	this.table.create(opts).success(function(obj){
+		result.resolve(obj); 
+	}); 
+	return result.promise; 
+}
+
+ServerObject.prototype.search = function(opts){
+	var result = Q.defer(); 
+	this.table.findAll({where: opts}).success(function(objs){
+		var ret = objs.map(function(x){return x.id}); 
+		result.resolve(ret); 
+	}); 
+	return result.promise; 
+}
+
+ServerObject.prototype.browse = function(ids){
+	var result = Q.defer(); 
+	console.debug("Browsing "+ids); 
+	this.table.findAll({where: ["id in (?)", ids]}).success(function(objs){
+		var ret = {}; 
+		objs.map(function(x){ret[x.id] = x;}); 
+		result.resolve(ret); 
+	}); 
+	return result.promise; 
+}
+
 /*
 function renderWidgets(req, res){
 	var self = this; 
@@ -459,6 +518,8 @@ exports.init = function(site, config){
 
 var SiteBoot = function(site, cfg){
 	this.site = site; 
+	if(!("init" in site)) site.init = function(){return Q.defer().resolve().promise;}
+	
 	this.inprogress = false; 
 	
 	config = cfg; 
@@ -480,7 +541,6 @@ var SiteBoot = function(site, cfg){
 	}); 
 	db.types = sequelize; 
 	db.objects = {}; 
-	db.objects.users = require("./user").init(db); 
 	db.objects.properties = require("./property").init(db); 
 
 	db.objects.sessions = db.define("session", {
@@ -493,7 +553,7 @@ var SiteBoot = function(site, cfg){
 				var cookies = {};
 				var session = null; 
 				
-				console.log("Looking up session "+sid+"..."); 
+				console.debug("Looking up session "+sid+"..."); 
 				
 				if(sid in cache.sessions){
 					console.debug("Returing cached session for "+sid); 
@@ -535,9 +595,7 @@ var SiteBoot = function(site, cfg){
 		}
 	}); 
 	
-	db.objects.users.sync().success(function(){
-		return db.objects.properties.sync(); 
-	}).success(function(){
+	db.objects.properties.sync().success(function(){
 		return db.objects.sessions.sync(); 
 	}).success(function(){
 		/*console.debug("Purging old sessions..."); 
@@ -570,7 +628,6 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 	} 
 	self.inprogress = true; 
 	*/
-	console.log("============== SERVING NEW REQUEST ==============="); 
 	var cookies = parseCookieString(req.headers.cookie); 
 
 	var query = url.parse(req.url, true);
@@ -580,6 +637,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 	
 	var args = {}
 	Object.keys(query.query).map(function(k){args[k] = query.query[k];}); 
+	
 	
 	try {
 		// Default response handler
@@ -668,6 +726,8 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 						next(null, session); 
 						return; 
 					}
+					
+					console.log("POST: "+docpath+" args: "+JSON.stringify(fields)); 
 					console.debug("FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
 					
 					Object.keys(fields).map(function(k){args[k] = fields[k]; });
@@ -708,6 +768,28 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 			},  
 			function(session, next){
 				console.debug("Rendering site..."); 
+				console.log("GET: "+docpath); 
+				
+				if(docpath == "scripts"){
+					copyResponse({
+						headers: {
+							"Content-type": "text/javascript"
+						}, 
+						data: server.client_code
+					}); 
+					next(null, session); 
+					return; 
+				} else if(docpath == "styles"){
+					copyResponse({
+						headers:  {
+							"Content-type": "text/css"
+						}, 
+						data: server.client_style
+					}); 
+					next(null, session); 
+					return; 
+				}
+					
 				var rcpt = args["rcpt"]; 
 				args = query.query; 
 				
@@ -744,8 +826,13 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 							console.debug("Site did not render.. using default render!"); 
 							render_default(); 
 						} else { 
-							copyResponse(response); 
-							next(null, session);
+							server.render("root", {
+								title: session.title||"",
+								content: response,
+							}).done(function(html){
+								copyResponse(html); 
+								next(null, session);
+							}); 
 						} 
 					});
 				} else {
@@ -882,8 +969,23 @@ SiteBoot.prototype.boot = function(){
 					for(var key in module.widgets) {
 						var name = ((prefix)?(prefix+"_"):"")+key; 
 						widget_types[name] = module.widgets[key]; 
-						if("init" in widget_types[name]) 
-							widget_types[name].init(server); 
+						var x = jquery.extend({}, server); 
+						
+						// replace the render method with a widget specific method that takes into account template prefixing TODO
+						x.render = function(template, data){
+							// if already prefixed with plugin name then we just render as normal. 
+							console.debug("Rendering template "+template+" for "+prefix); 
+							if(template.indexOf(prefix) == 0) 
+								return server.render(template, data); 
+							// otherwise prefix it with the plugin name
+							return server.render(((prefix)?(prefix+"_"):"")+template, data); 
+						} 
+						
+						widget_types[name].server = x; 
+						
+						if("init" in widget_types[name]) {
+							widget_types[name].init(x); 
+						}
 					}
 					
 					next(); 
@@ -925,7 +1027,21 @@ SiteBoot.prototype.boot = function(){
 								}
 							}); 
 							var def = server.registerObjectFields(model.tableName, model.fields); 
-							server.db.objects[model.tableName][model.name] = model.constructor; 
+							
+							var proto = model.constructor.prototype; 
+							
+							model.constructor.prototype = new ServerObject(def); 
+							
+							Object.keys(proto).map(function(x){
+								model.constructor.prototype[x] = proto[x]; 
+							}); 
+							
+							model.constructor.prototype.super = ServerObject.prototype; 
+							model.constructor.prototype.constructor = model.constructor; 
+							
+							server.db.objects[model.name] = new model.constructor(); 
+							server.db.objects[model.name].table = def; 
+							//server.db.objects[model.tableName][model.name] = model.constructor; 
 							
 							def.sync(); 
 						}); 
@@ -1057,6 +1173,7 @@ SiteBoot.prototype.boot = function(){
 				var crash = "=============================\n";
 				crash += "Program crashed on "+(new Date())+"\n"; 
 				crash += err.stack; 
+				console.error(crash); 
 				fs.appendFile(server.config.site_path+"/crashlog.log", crash); 
 			});
 			

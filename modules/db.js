@@ -6,8 +6,6 @@ var sequelize = require("sequelize");
 
 
 // extensions
-<<<<<<< HEAD
-=======
 
 var db = {}; 
 
