@@ -75,9 +75,8 @@ exports.model = {
 	tableName: "users",
 	fields: {
 		id: {
-			type: "integer", 
-			autoIncrement: true,
-			unique: true
+			type: "integer",
+			primaryKey: true
 		},
 		username: "string",
 		hash: "string",

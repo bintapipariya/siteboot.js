@@ -67,6 +67,10 @@ var mime_types = {
 	'.png': "image/png"
 };
 
+var shellarg = function(cmd) {
+  return '"'+cmd.replace(/(["\s'$`\\])/g,'\\$1')+'"';
+};
+
 var DefaultWidget = function(x){
 	this.server = x; 
 }
@@ -339,7 +343,7 @@ server.create_widget = function(c, options){
 	var widget = widget_types[c].new(x); 
 	if(!widget) return widgets_types["default"].new(x); 
 	
-	widget.id = c+widget_counter; 
+	widget.id = "widget_"+widget_counter; 
 	widget.name = c; 
 	widget_counter++; 
 	
@@ -374,27 +378,51 @@ server.create_widget = function(c, options){
 server.registerObjectFields = function(name, fields){
 	var table = {}; 
 	var self = this; 
+	var ret = Q.defer(); 
 	
 	if(!(name in server.db.objects)){
 		server.db.objects[name] = table = server.db.define(name, fields); 
-		Object.keys(fields).map(function(f){
-			self.db.getQueryInterface().changeColumn(table.tableName, f, fields[f]); 
+		
+		async.eachSeries(Object.keys(fields), function(f, next){
+			//console.info("Updating field "+f+" for "+name+"!"); 
+			var def = {}; 
+			if(typeof(fields[f]) == "object") def = fields[f]; 
+			else def = {type: fields[f]}; 
+			self.db.getQueryInterface().changeColumn(table.tableName, f, def)
+			.success(function(){next();})
+			.error(function(err){
+				console.debug("ERROR: "+err); 
+				self.db.getQueryInterface().addColumn(table.tableName, f, def)
+				.success(function(){next();})
+				.error(function(err){
+					console.debug("ERROR: "+err);  
+					next(); 
+				}); 
+			}); 
+		}, function(){
+			table.sync().success(function(){
+				ret.resolve(table);
+			}).error(function(){
+				ret.resolve(table); 
+			});
 		}); 
 	} else {
 		var table = server.db.objects[name]; 
-		var schema = table.rawAttributes; 
-		var options = table.options; 
-		Object.keys(fields).map(function(f){
+		async.eachSeries(Object.keys(fields), function(f, next){
 			console.info("Registering field "+f+" for "+name+"!"); 
 			if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
 			else schema[f] = {type: fields[f]}; 
 			
-			self.db.getQueryInterface().changeColumn(table.tableName, f, schema[f]); 
+			self.db.getQueryInterface().changeColumn(table.tableName, f, schema[f])
+			.success(function(){next();});  
+		}, function(){
+			ret.resolve(table); 
 		}); 
-		server.db.objects[name] = server.db.define(name, schema, options); 
 	}
-	return server.db.objects[name]; 
+	return ret.promise;  
 }
+
+server.shellarg = shellarg; 
 
 server.pool = {
 	get: function(model){
@@ -472,8 +500,9 @@ exports.shutdown = function(){
 	server.http.close(); 
 }
 
-var ServerObject = function(table){
+var ServerObject = function(table, server){
 	this.table = table; 
+	this.server = server; 
 }
 
 ServerObject.prototype.create = function(opts){
@@ -495,12 +524,18 @@ ServerObject.prototype.search = function(opts){
 
 ServerObject.prototype.browse = function(ids){
 	var result = Q.defer(); 
-	console.debug("Browsing "+ids); 
-	this.table.findAll({where: ["id in (?)", ids]}).success(function(objs){
+	var where = {where: ["id in (?)", ids]}; 
+	if(!ids || !ids.length){
+		where = {}; 
+	} 
+	
+	this.table.findAll(where).success(function(objs){
+		console.debug("Found "+objs.length+" objects.."); 
 		var ret = {}; 
 		objs.map(function(x){ret[x.id] = x;}); 
-		result.resolve(ret); 
+		result.resolve(ret, objs); 
 	}); 
+	
 	return result.promise; 
 }
 
@@ -516,8 +551,9 @@ exports.init = function(site, config){
 	return new SiteBoot(site, config); 
 }
 
-var SiteBoot = function(site, cfg){
-	this.site = site; 
+var SiteBoot = function(SiteClass, cfg){
+	var site = this.site = new SiteClass(server); 
+	
 	if(!("init" in site)) site.init = function(){return Q.defer().resolve().promise;}
 	
 	this.inprogress = false; 
@@ -751,7 +787,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 						.done(function(response){
 							delete args["rcpt"];  
 							copyResponse(response); 
-							next(null, session); 
+							next((docpath=="ajax")?"ajax":null, session); 
 						}); 
 					} else if("post" in site){
 						site.post({
@@ -998,54 +1034,78 @@ SiteBoot.prototype.boot = function(){
 					}
 					fs.readdir(path+"/objects", function(err, files){
 						if(files) files.sort(); 
-						files.map(function(file){
+						async.eachSeries(files, function(file, next){
 							if(!/.*js$/.test(file)){
+								next(); 
 								return; 
 							}
 							file = path+"/objects/"+file; 
 							console.debug("Loading object from "+file); 
 							var model = require(file).model; 
+							
 							var required = ["constructor", "fields", "name"];
 							var fail = false;  
 							if(!model){
 								console.error("Object definition in "+file+" is missing 'model' field defining the model of the object!"); 
+								fail = true; 
+							} else {
+								required.map(function(x){
+									if(!(x in model)){
+										console.error("Object definition in "+file+" is missing required field "+x);
+										fail = true; 
+									}
+								}); 
+							}
+							if(fail){
+								next();
 								return; 
 							}
-							required.map(function(x){
-								if(!(x in model)){
-									console.error("Object definition in "+file+" is missing required field "+x);
-									fail = true; 
-								}
-							}); 
-							if(fail) return; 
+							
+							if(!model.tableName)
+								model.tableName = model.name.replace(/\./g, "_"); 
+								
 							// resolv all the types
 							Object.keys(model.fields).map(function(x){
 								if(typeof(model.fields[x]) == "object"){
-									model.fields[x].type = server.db.types[model.fields[x].type.toString().toUpperCase()]; 
+									var typename = model.fields[x].type.toString().toUpperCase(); 
+									if(!(typename in server.db.types)){
+										delete model.fields[x]; 
+									} else {
+										model.fields[x].type = server.db.types[typename]; 
+									}
 								} else {
 									model.fields[x] = server.db.types[model.fields[x].toString().toUpperCase()]; 
 								}
 							}); 
-							var def = server.registerObjectFields(model.tableName, model.fields); 
 							
-							var proto = model.constructor.prototype; 
+							console.debug(Object.keys(model.fields)); 
 							
-							model.constructor.prototype = new ServerObject(def); 
-							
-							Object.keys(proto).map(function(x){
-								model.constructor.prototype[x] = proto[x]; 
+							server.registerObjectFields(model.tableName, model.fields).done(function(def){
+								var proto = model.constructor.prototype; 
+								
+								model.constructor.prototype = new ServerObject(def, server); 
+								
+								Object.keys(proto).map(function(x){
+									model.constructor.prototype[x] = proto[x]; 
+								}); 
+								
+								model.constructor.prototype.super = ServerObject.prototype; 
+								model.constructor.prototype.constructor = model.constructor; 
+								
+								server.db.objects[model.name] = new model.constructor(); 
+								server.db.objects[model.name].table = def; 
+								//server.db.objects[model.tableName][model.name] = model.constructor; 
+									
+								def.sync().success(function(){
+									if("init" in server.db.objects[model.name])
+										server.db.objects[model.name].init().done(next); 
+									else
+										next();
+								});  
 							}); 
-							
-							model.constructor.prototype.super = ServerObject.prototype; 
-							model.constructor.prototype.constructor = model.constructor; 
-							
-							server.db.objects[model.name] = new model.constructor(); 
-							server.db.objects[model.name].table = def; 
-							//server.db.objects[model.tableName][model.name] = model.constructor; 
-							
-							def.sync(); 
+						}, function(){
+							next(); 
 						}); 
-						next(); 
 					});
 				},
 				// load client code
