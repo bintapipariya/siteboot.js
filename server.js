@@ -513,6 +513,27 @@ ServerObject.prototype.create = function(opts){
 	return result.promise; 
 }
 
+ServerObject.prototype.remove = function(ids){
+	var result = Q.defer(); 
+	var where = {where: ["id in (?)", ids]}; 
+	if(ids && ids.length){
+		this.table.findAll(where).success(function(objs){
+			async.forEach(objs, function(obj, next){
+				obj.destroy().success(function(){
+					next(); 
+				}); 
+			}, function(){
+				result.resolve(); 
+			}); 
+		}); 
+	} else {
+		console.error("Zero length ids list passed to remove()"); 
+		result.resolve(); 
+	}
+	
+	return result.promise; 
+}
+
 ServerObject.prototype.search = function(opts){
 	var result = Q.defer(); 
 	this.table.findAll({where: opts}).success(function(objs){
