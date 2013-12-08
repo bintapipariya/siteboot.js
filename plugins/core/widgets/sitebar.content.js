@@ -1,14 +1,6 @@
 
 var server = {}; 
 
-exports.init = function(x){
-	server = x; 
-}
-
-exports.new = function(x){
-	return new Widget(x); 
-}
-
 var Widget = function(x){
 	this.server = x; 
 	this.model = {id: "text_widget"}; 
@@ -33,7 +25,7 @@ Widget.prototype.render = function(path, args, session, done){
 	}); 
 }
 
-exports.render = function(path, args, session, done){
-	done("Deprecated function!"); 
-}
 
+exports.module = {
+	type: Widget
+}

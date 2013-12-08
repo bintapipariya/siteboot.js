@@ -13,27 +13,33 @@ var curl = function(url, cb){
 	}); 
 }
 
-var server = {}; 
-
-exports.session = {
-	current_booking: {}
-}
-
-exports.init = function(x){
-	server = x; 
-}
-
-exports.new = function(x){
-	return new Widget(x); 
-}
-
-var Widget = function(x){
+var Widget = function(x, object){
 	this.server = x; 
+	this.object = object||{}; 
 }
 
 Widget.prototype.post = function(req){
 	var result = this.server.defer(); 
-	result.resolve(); 
+	var self = this; 
+	
+	function done(r){result.resolve(r);}
+	
+	if("resolve" in req.args){
+		self.resolveAddress(req.args["resolve"], function(err, address){
+			if(err){
+				done(JSON.stringify({
+					error: err
+				}));
+			} else {
+				done(JSON.stringify({
+					success: "OK", 
+					address: address
+				})); 
+			}
+		}); 
+	} else {
+		done(); 
+	}
 	return result.promise; 
 }
 
@@ -68,33 +74,17 @@ Widget.prototype.resolveAddress = function(addr, next){
 
 Widget.prototype.render = function(req){
 	var self = this; 
-	var args = req.args; 
-	var session = req.session; 
-	var path = req.path; 
 	var result = this.server.defer(); 
 	function done(x){result.resolve(x);}
 	
-	if("resolve" in args){
-		self.resolveAddress(args["address"], function(err, address){
-			if(err){
-				done(JSON.stringify({
-					status: "ERROR", 
-					error: err
-				}));
-			} else {
-				done(JSON.stringify({
-					status: "OK", 
-					address: address
-				})); 
-			}
-		}); 
-	} else {
-		return self.server.render("core_address.picker", {
-			widget_id: this.id,
-			name: self.data().name, 
-			data: session.current_booking
-		}); 
-	}
+	return self.server.render("core_address.picker", {
+		widget_id: this.id,
+		data: self.object||{}
+	}); 
 	return result.promise; 
 }
 
+
+exports.module = {
+	type: Widget
+}

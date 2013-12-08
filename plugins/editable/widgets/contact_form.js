@@ -1,14 +1,4 @@
-exports.init = function(x){
-	
-}
 
-exports.new = function(x){
-	return new Widget(x); 
-}
-
-exports.render = function(path, args, session, callback){
-	callback("Deprecated function!"); 
-}
 
 var Widget = function(x){
 	this.server = x; 
@@ -42,4 +32,8 @@ Widget.prototype.data = function(data){
 	} else {
 		return this.model; 
 	}
+}
+
+exports.module = {
+	type: Widget
 }

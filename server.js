@@ -40,14 +40,15 @@ var events = require("events");
 var assert = require("assert"); 
 var Q = require("q"); 
 var jquery = require("jquery");
+var i18n = require("i18n"); 
 
 var cluster = require("cluster");
+var ServerInterface = require("./lib/server_interface").ServerInterface; 
+var ServerObject = require("./lib/server_object").ServerObject; 
+var ServerView = require("./lib/server_view").ServerView; 
 
 var extname = path.extname; 
 
-var config = {};
-
-var widget_types = {}; 
 var widgets = {};
 var pages = {};
 var forms = {}; 
@@ -56,7 +57,14 @@ var handlers = {};
 var plugins = {}; 
 var core = {}; 
 
-var widget_counter = 0; 
+var locale = Object.create(i18n); 
+locale.configure({
+	locales: ["en", "se"], 
+	directory: __dirname + "/lang", 
+	defaultLocale: "en"
+}); 
+
+__ = locale.__; 
 
 var mime_types = {
 	'.html': "text/html",
@@ -71,35 +79,13 @@ var shellarg = function(cmd) {
   return '"'+cmd.replace(/(["\s'$`\\])/g,'\\$1')+'"';
 };
 
-var DefaultWidget = function(x){
-	this.server = x; 
-}
-DefaultWidget.prototype.render = function(req){
-	var r = Q.defer(); 
-	r.resolve("[widget not found]"); 
-	return r.promise; 
-}
-
-widget_types["default"] = {
-	new: function(x){
-		return new DefaultWidget(x); 
-	},
-}; 
-
-var BASEDIR = __dirname+"/"; 
-var ITEMS_PER_PAGE = 21; 
-
-var cache = {}; 
-
-cache.sessions = {}; 
-cache.mailer_templates = {}; 
 
 var theme = {};
 
 var vfs = require("./modules/vfs"); 
 var loader = require("./modules/loader"); 
 
-
+/*
 var AsyncEventEmitter = function(){
 	events.EventEmitter.call(this); 
 	//this.orig_emit = this.emit; 
@@ -133,145 +119,32 @@ var AsyncEventEmitter = function(){
 
 util.inherits(AsyncEventEmitter, events.EventEmitter); 
 
-var ServerInterface = function(){
-	AsyncEventEmitter.call(this); 
-	this._client_code = ""; 
-}
-
 util.inherits(ServerInterface, AsyncEventEmitter); 
-
-var server = new ServerInterface();
-
-console.debug = function(msg){
-	console.log("DEBUG: "+msg); 
-}
-
-console._sb_err = console.error; 
-
-console.error = function(msg){
-	console._sb_err("ERROR: "+msg); 
-}
-
-console.info = function(msg){
-	console.log("INFO: "+msg); 
-}
-
-/*
-function WidgetValue(widget, args, session){
-	this.session = session; 
-	this.widget = widget; 
-	this.args = args; 
-	
-	var self = this; 
-	
-	return function(){
-		return function(val){ // val is the argument from mustache
-			var name = self.widget.id; 
-			if(val){
-				name = self.widget.id+"_"+val; 
-			}
-			console.log("Getting value for "+name+", "+val); 
-			if(!(name in self.session.rendered_widgets)){
-				var w = {};
-				for(var key in self.widget)
-					w[key] = self.widget[key];
-				w.id = name; 
-				w.argument = val; 
-				widgets[name] = w; 
-				console.log("Added copy widget for key "+name); 
-				// call render for the widget
-				//self.widget.render(docpath, self.args, self.session, function(html){
-				//	session.rendered_widgets[name] = html; 
-				//}); 
-				return "Default Text"; 
-			}
-			return self.session.rendered_widgets[name];
-		}
-	};
-}
 */
 
-server.q = Q; 
-server.mailer = {}; 
-server.mailer.send = function(options, next){
-	var path         = require('path'); 
-	var emailTemplates = require('email-templates'); 
-	var nodemailer     = require('nodemailer');
-	
-	next = next||function(){}; 
-	
-	if(!options.to || !options.from || !options.template){
-		console.error("Mailer: You must specify both to, from and template in options: "+JSON.stringify(options)); 
-		next(""); 
-		return; 
+
+
+// initialize console output
+(function (){
+	console.debug = function(msg){
+		console.log(__("DEBUG: ")+msg); 
 	}
-	options.subject = options.subject||"(no subject)"; 
-	
-	var tpl = {
-		path: __dirname+"/mailer_templates", 
-		template: "default"
+
+	console._sb_err = console.error; 
+
+	console.error = function(msg){
+		console._sb_err(__("ERROR: ")+msg); 
 	}
-	if(options.template in cache.mailer_templates) 
-		tpl = cache.mailer_templates[options.template]; 
-	
-	emailTemplates(tpl.path, function(err, template) {
-		if (err) {
-			console.log(err);
-			return; 
-		} 
-		var transportBatch = nodemailer.createTransport("SMTP", config.mailer.smtp);
-		
-		var Render = function(data) {
-			this.data = data;
-			this.send = function(err, html, text) {
-				if (err) {
-					console.log(err);
-					next(""); 
-					return; 
-				} 
-				
-				// send the email
-				transportBatch.sendMail({
-					from: options.from,
-					to: options.to,
-					subject: options.subject,
-					html: html,
-					generateTextFromHTML: true
-				}, function(err, responseStatus) {
-					if (err) {
-						console.log(err);
-					} else {
-						console.log(responseStatus.message);
-					}
-					
-					next(html); 
-				});
-			};
-			this.batch = function(batch) {
-				try{
-					batch(this.data, "mailer_templates", this.send);
-				} catch(e){
-					console.log("ERROR WHILE SENDING EMAILS: "+e); 
-					next(""); 
-				}
-			};
-		};
-		
-		console.debug("Using mailer template: "+tpl.path+"/"+tpl.template); 
-		
-		// Load the template and send the emails
-		template(tpl.template, true, function(err, batch) {
-			var render = new Render(options.data);
-			render.batch(batch);
-		});
-	});
-}
+
+	console.info = function(msg){
+		console.log(__("INFO: ")+msg); 
+	}
+})(); 
 
 var User = function(){
 	this.loggedin = false; 
 	this.username = "default";
 }
-
 
 var Session = function(x){
 	this.user = new User(); 
@@ -290,7 +163,132 @@ Session.prototype.save = function(){
 	this.object.save(); 
 }
 
-server.render = function(template, fragments){
+Session.prototype.toJSON = function(){
+	return {
+		sid: this.sid, 
+		user: this.user,
+		data: this.data
+	}
+}
+			
+function parseCookieString(str){
+	var cookies = {}; 
+	str && str.split(';').forEach(function( cookie ) {
+		var parts = cookie.split('=');
+		cookies[ parts[ 0 ].trim() ] = ( parts[ 1 ] || '' ).trim();
+	});
+	return cookies; 
+}
+
+
+exports.shutdown = function(){
+	server.http.close(); 
+}
+
+/*
+function renderWidgets(req, res){
+	var self = this; 
+	if(!self._widgets) return {}; 
+	Object.keys(self._widgets).map(function(x){
+		result[x] = self._widgets.render(req, res)
+}
+*/
+exports.init = function(site, config){
+	return new SiteBoot(site, config); 
+}
+
+var SiteBoot = function(SiteClass, config){
+	var self = this; 
+	
+	this.BASEDIR = __dirname+"/"; 
+	this.config = config; 
+	this.cache = {}; 
+	this.cache.sessions = {}; 
+	this.cache.mailer_templates = {}; 
+	this.db = {}; 
+	this.vfs = vfs; 
+	this.widget_types = {}; 
+	this.widget_types["default"] = ServerView; 
+
+	this.pool = {
+		get: function(model){
+			if(model in self.db.objects){
+				return new self.db.objects[model](); 
+			}
+			throw new Error("Object "+model+" not found!"); 
+		}, 
+		type: function(model){
+			if(model in self.db.objects){
+				return self.db.objects[model]; 
+			}
+			throw new Error("Object "+model+" not found!"); 
+		}
+	}
+	
+	if(!("site_path" in config)) config.site_path = process.cwd(); 
+
+	console.log("Initializing database with configuration "+JSON.stringify(config.database));
+	var db = new sequelize(config.database.database, config.database.user, config.database.password, {
+		define: {
+			charset: "utf8", 
+			collate: 'utf8_general_ci',
+			freezeTableName: true,
+		},
+		host: config.database.hostname,
+		dialect: "mysql"
+	}); 
+	// test a query to make sure everything is working..
+	db.query("select 1 from dual").error(function(err){
+		console.error(__("Could not connect to database: %s", err));
+		process.exit(); 
+	}); 
+	db.types = sequelize; 
+	db.objects = {}; 
+	
+	this.db = db; 
+	
+	this.server = new ServerInterface(this);
+	this.site = new SiteClass(this.server); 
+}
+
+function setSessionTimeout(session){
+	if("timeout" in session)
+		clearTimeout(session.timeout); 
+	session.timeout = setTimeout(function(){
+		console.debug("Removing session object for "+session.sid); 
+		server.emitAsync("session_destroy", session, function(){
+			session.object.destroy(); 
+			delete cache.sessions[session.sid];
+		}); 
+	}, 60000*(config.session_ttl||20)); 
+}; 
+
+SiteBoot.prototype.CreateWidget = function(view, object){
+	var self = this; 
+	var widget_types = this.widget_types; 
+	var x = this.server; 
+	
+	if(!(view in widget_types)){
+		console.debug("Widget type "+view+" does not exist!"); 
+		return new widget_types["default"](x); 
+	}
+
+	var widget = new widget_types[view](x, object); 
+	if(!widget) return new widgets_types["default"](x); 
+	
+	widget.name = view; 
+	widget.object = object; 
+	widget._object = object; 
+	
+	if("init" in widget)
+		widget.init(server); 
+	
+	console.debug("Created widget "+view); 
+	
+	return widget; 
+}
+
+SiteBoot.prototype.RenderFragments = function(template, fragments, context){
 	var proms = []; 
 	var result = Q.defer();  
 	
@@ -320,361 +318,22 @@ server.render = function(template, fragments){
 		}); 
 	}, function(){
 		var form = forms[template]||""; 
-		console.debug("Rendering template "+template); 
+		
+		console.debug("Rendering template "+template+" context = "+context); 
+		data["__"] = function(){
+			return function(text){
+				if(context)
+					return context.__.apply(context, arguments); 
+				else 
+					return text + "(untranslated)"; 
+			}
+		}
 		result.resolve(mustache.render(forms[template]||"", data)); 
 	}); 
 	return result.promise; 
 }
 
-server.defer = function(){
-	return Q.defer(); 
-}
-
-server.create_widget = function(c, options){
-	
-	if(!(c in widget_types) || !("new" in widget_types[c])){
-		console.debug("Widget type "+c+" does not exist!"); 
-		return widget_types["default"].new(server); 
-	}
-	
-	var x = widget_types[c].server||server; 
-	console.debug(x); 
-	
-	var widget = widget_types[c].new(x); 
-	if(!widget) return widgets_types["default"].new(x); 
-	
-	widget.id = "widget_"+widget_counter; 
-	widget.name = c; 
-	widget_counter++; 
-	
-	if(!("data" in widget)){
-		widget.data = function(d){
-			if(d) {
-				this.model = d;
-				return this.model; 
-			} else {
-				return this.model; 
-			}
-		}
-	}
-	
-	widget.addWidget = function(name, id, settings){
-		this[name] = this.server.create_widget(id); 
-		this[name].data(settings); 
-	}
-	
-	if("init" in widget)
-		widget.init(server); 
-		
-	if(options) widget.data(options); 
-	
-	widgets[widget.id] = widget; 
-	
-	console.debug("Created widget "+c); 
-	
-	return widget; 
-}
-
-server.registerObjectFields = function(name, fields){
-	var table = {}; 
-	var self = this; 
-	var ret = Q.defer(); 
-	
-	if(!(name in server.db.objects)){
-		server.db.objects[name] = table = server.db.define(name, fields); 
-		
-		async.eachSeries(Object.keys(fields), function(f, next){
-			//console.info("Updating field "+f+" for "+name+"!"); 
-			var def = {}; 
-			if(typeof(fields[f]) == "object") def = fields[f]; 
-			else def = {type: fields[f]}; 
-			self.db.getQueryInterface().changeColumn(table.tableName, f, def)
-			.success(function(){next();})
-			.error(function(err){
-				console.debug("ERROR: "+err); 
-				self.db.getQueryInterface().addColumn(table.tableName, f, def)
-				.success(function(){next();})
-				.error(function(err){
-					console.debug("ERROR: "+err);  
-					next(); 
-				}); 
-			}); 
-		}, function(){
-			table.sync().success(function(){
-				ret.resolve(table);
-			}).error(function(){
-				ret.resolve(table); 
-			});
-		}); 
-	} else {
-		var table = server.db.objects[name]; 
-		async.eachSeries(Object.keys(fields), function(f, next){
-			console.info("Registering field "+f+" for "+name+"!"); 
-			if(typeof(fields[f]) == "object") schema[f] = fields[f]; 
-			else schema[f] = {type: fields[f]}; 
-			
-			self.db.getQueryInterface().changeColumn(table.tableName, f, schema[f])
-			.success(function(){next();});  
-		}, function(){
-			ret.resolve(table); 
-		}); 
-	}
-	return ret.promise;  
-}
-
-server.shellarg = shellarg; 
-
-server.pool = {
-	get: function(model){
-		if(model in server.db.objects){
-			return server.db.objects[model]; 
-		}
-	}
-}
-
-Session.prototype.render = function(template, args){
-	var session = this; 
-	var params = {};
-	// add all value retreivers for all currently available widgets
-	//for(var key in widgets){
-	//	params[key] = new WidgetValue(widgets[key], args, session); 
-	//}
-	// add args to the options array
-	for(var key in args){
-		params[key] = args[key]; 
-	}
-	if(!(template in forms)){
-		return "Form "+template+".html does not exist!";
-	} else {
-		return mustache.render(forms[template], params);
-	} 
-}
-
-Session.prototype.render_widgets = function(widgets, path, args, callback){
-	var self = this; 
-	var data = {}; 
-	async.each(Object.keys(widgets), function(k, cb){
-		if(widgets[k] && ("update" in widgets[k]))
-			widgets[k].update(path, args, self, cb);
-		else {
-			cb(); 
-		}
-	}, function(){
-		async.eachSeries(Object.keys(widgets), function(k, cb){
-			if(widgets[k]){
-				var session_data = self[widgets[k].id]||{}; 
-				widgets[k].render(path, args, self, function(x){
-					data[k] = x; 
-					self[widgets[k].id] = session_data; 
-					cb(); 
-				}, session_data);
-			} else {
-				console.debug("Error: empty widget found in argument for key "+k); 
-				cb(); 
-			}
-		}, function(){
-			if(callback) callback(data); 
-		});
-	});
-}
-
-Session.prototype.toJSON = function(){
-	return {
-		sid: this.sid, 
-		user: this.user,
-		data: this.data
-	}
-}
-			
-function parseCookieString(str){
-	var cookies = {}; 
-	str && str.split(';').forEach(function( cookie ) {
-		var parts = cookie.split('=');
-		cookies[ parts[ 0 ].trim() ] = ( parts[ 1 ] || '' ).trim();
-	});
-	return cookies; 
-}
-
-
-exports.shutdown = function(){
-	server.http.close(); 
-}
-
-var ServerObject = function(table, server){
-	this.table = table; 
-	this.server = server; 
-}
-
-ServerObject.prototype.create = function(opts){
-	var result = Q.defer(); 
-	this.table.create(opts).success(function(obj){
-		result.resolve(obj); 
-	}); 
-	return result.promise; 
-}
-
-ServerObject.prototype.remove = function(ids){
-	var result = Q.defer(); 
-	var where = {where: ["id in (?)", ids]}; 
-	if(ids && ids.length){
-		this.table.findAll(where).success(function(objs){
-			async.forEach(objs, function(obj, next){
-				obj.destroy().success(function(){
-					next(); 
-				}); 
-			}, function(){
-				result.resolve(); 
-			}); 
-		}); 
-	} else {
-		console.error("Zero length ids list passed to remove()"); 
-		result.resolve(); 
-	}
-	
-	return result.promise; 
-}
-
-ServerObject.prototype.search = function(opts){
-	var result = Q.defer(); 
-	this.table.findAll({where: opts}).success(function(objs){
-		var ret = objs.map(function(x){return x.id}); 
-		result.resolve(ret); 
-	}); 
-	return result.promise; 
-}
-
-ServerObject.prototype.browse = function(ids){
-	var result = Q.defer(); 
-	var where = {where: ["id in (?)", ids]}; 
-	if(!ids || !ids.length){
-		where = {}; 
-	} 
-	
-	this.table.findAll(where).success(function(objs){
-		console.debug("Found "+objs.length+" objects.."); 
-		var ret = {}; 
-		objs.map(function(x){ret[x.id] = x;}); 
-		result.resolve(ret, objs); 
-	}); 
-	
-	return result.promise; 
-}
-
-/*
-function renderWidgets(req, res){
-	var self = this; 
-	if(!self._widgets) return {}; 
-	Object.keys(self._widgets).map(function(x){
-		result[x] = self._widgets.render(req, res)
-}
-*/
-exports.init = function(site, config){
-	return new SiteBoot(site, config); 
-}
-
-var SiteBoot = function(SiteClass, cfg){
-	var site = this.site = new SiteClass(server); 
-	
-	if(!("init" in site)) site.init = function(){return Q.defer().resolve().promise;}
-	
-	this.inprogress = false; 
-	
-	config = cfg; 
-	if(!("site_path" in config)) config.site_path = process.cwd(); 
-
-	console.log("Initializing database with configuration "+JSON.stringify(config.database));
-	db = new sequelize(config.database.database, config.database.user, config.database.password, {
-		define: {
-			charset: "utf8", 
-			collate: 'utf8_general_ci'
-		},
-		host: config.database.hostname,
-		dialect: "mysql"
-	}); 
-	// test a query to make sure everything is working..
-	db.query("select 1 from dual").error(function(err){
-		console.error("Could not connect to database: "+err);
-		process.exit(); 
-	}); 
-	db.types = sequelize; 
-	db.objects = {}; 
-	db.objects.properties = require("./property").init(db); 
-
-	db.objects.sessions = db.define("session", {
-		sid: {type: db.types.STRING, primaryKey: true},
-		user: db.types.STRING,
-		data: db.types.TEXT
-	}, {
-		classMethods: {
-			GetOrCreateSession: function(sid, next){
-				var cookies = {};
-				var session = null; 
-				
-				console.debug("Looking up session "+sid+"..."); 
-				
-				if(sid in cache.sessions){
-					console.debug("Returing cached session for "+sid); 
-					next(cache.sessions[sid]); 
-					return; 
-				}
-				
-				var sessions = server.db.objects.sessions; 
-				
-				var hash = String(crypto.createHash("sha1").update(String(Math.random())).digest("hex")); 
-				if(!sid) sid = hash; 
-				
-				sessions.findOrCreate({sid: sid}, {sid: hash}).success(function(x, created){
-					if(sid in cache.sessions) {
-						next(cache.sessions[sid]); 
-						return; 
-					}
-					
-					if(created)
-						console.debug("Created new session in database with sid: "+x.sid);
-					else 
-						console.debug("Loaded existing session from database for: "+x.sid+" -- "+JSON.stringify(x.values));
-					
-					session = new Session(x); 
-					cache.sessions[sid] = session; 
-					setSessionTimeout(session); 
-					session.object.save().success(function(){
-						server.emit("session_create", session); 
-						server.emitAsync("session_init", session, function(){
-							setSessionTimeout(session); 
-							session.object.save().success(function(){
-								next(session); 
-							}); 
-						}); 
-					}); 
-					
-				}); 
-			}
-		}
-	}); 
-	
-	db.objects.properties.sync().success(function(){
-		return db.objects.sessions.sync(); 
-	}).success(function(){
-		/*console.debug("Purging old sessions..."); 
-		return db.query("delete from sessions where createdAt < '"+(new Date((new Date()).getTime() - 60000*(config.session_ttl||20)))+"'").error(function(err){
-			console.error("Could not purge sessions table: "+err);
-		}); */
-	}); 
-	server.db = db; 
-}
-function setSessionTimeout(session){
-	if("timeout" in session)
-		clearTimeout(session.timeout); 
-	session.timeout = setTimeout(function(){
-		console.debug("Removing session object for "+session.sid); 
-		server.emitAsync("session_destroy", session, function(){
-			session.object.destroy(); 
-			delete cache.sessions[session.sid];
-		}); 
-	}, 60000*(config.session_ttl||20)); 
-}; 
-
-SiteBoot.prototype.ClientRequest = function(req, res){
+SiteBoot.prototype.ClientRequest = function(request, res){
 	var self = this; 
 	/*
 	if(self.inprogress){
@@ -685,9 +344,9 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 	} 
 	self.inprogress = true; 
 	*/
-	var cookies = parseCookieString(req.headers.cookie); 
+	var cookies = parseCookieString(request.headers.cookie); 
 
-	var query = url.parse(req.url, true);
+	var query = url.parse(request.url, true);
 	var docpath = query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/");
 	var splitpath = docpath.split("/"); 
 	var site = this.site; 
@@ -695,6 +354,11 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 	var args = {}
 	Object.keys(query.query).map(function(k){args[k] = query.query[k];}); 
 	
+	var req = {
+		path: docpath, 
+		args: args,
+		session: null,
+	}
 	
 	try {
 		// Default response handler
@@ -704,7 +368,7 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 				var path = req.path; 
 				
 				var filepath = vfs.resolve("/"+path); 
-				console.debug("Trying to serve ordinary file "+filepath+" ("+path+")..."); 
+				//console.debug("Trying to serve ordinary file "+filepath+" ("+path+")..."); 
 				if(!filepath){
 					res.resolve(); 
 					return res.promise;
@@ -737,9 +401,11 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 		// default headers
 		var resp = {
 			headers: {
-				"Content-type": "text/html"
+				"Content-type": "text/html",
+				"Cache-Control": "no-cache"
 			},
 			code: 200,
+			
 			data: "Default data"
 		}
 		
@@ -759,28 +425,123 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 			}
 		}
 			
+		var page = null; 
 		async.waterfall([
 			function(next){
-				server.db.objects.sessions.GetOrCreateSession(cookies["session"], function(session){
-					next(null, session);
+				if(fs.existsSync(self.vfs.resolve("/"+docpath))){
+					console.debug("Serving file since it exists: "+docpath);
+					renderer.render(req).done(function(resp){
+						copyResponse(resp); 
+						next("end"); 
+					}); 
+				} else {
+					next(); 
+				}
+			}, 
+			function(next){
+				var sid = cookies["session"]; 
+				console.debug("Looking up session: "+sid); 
+				// the perfect solution for multiple simultaneous requests coming in at the same time for the same session. 
+				if(!self.cache.sessions[sid]){
+					self.cache.sessions[sid] = {
+						sid: sid, 
+						session: null, 
+						promise: function(){
+							if(!this._promise){
+								this._promise = Q.defer(); 
+								var ret = this._promise; 
+								var sessions = self.pool.get("res.session"); 
+								sessions.find({sid: this.sid}).done(function(session){
+									if(!session){
+										sessions.create({language: "en"}).done(function(session){
+											console.debug("Created new session in database with sid: "+session.sid);
+											ret.resolve(session); 
+										}); 
+									} else {
+										console.debug("Loaded existing session: "+session.sid);
+										ret.resolve(session); 
+									}
+								}); 
+								return ret.promise; 
+							} else {
+								return this._promise.promise; 
+							}
+						}
+					}
+				} 
+				self.cache.sessions[sid].promise().done(function(session){
+					req.session = session; 
+					next(); 
 				}); 
 			}, 
-			function(session, next){
-				console.debug("Parsing post data..."); 
-				resp.headers["Set-Cookie"] = "session="+session.sid+"; path=/"; 
-				
-				if(!session.user.loggedin && server.config.auto_login){
-					session.user = {
-						username: "admin",
-						role: "admin",
-						loggedin: true,
-					}
+			function(next){
+				if(req.path == "scripts"){
+					copyResponse({
+						headers: {
+							"Content-type": "text/javascript"
+						}, 
+						data: "var session = "+JSON.stringify(req.session)+"; \n"+self.client_code
+					}); 
+					next("end"); 
+					return; 
+				} else if(req.path == "styles"){
+					copyResponse({
+						headers:  {
+							"Content-type": "text/css"
+						}, 
+						data: self.client_style
+					}); 
+					next("end"); 
+					return; 
 				}
 				
+				// set up session locale
+				var i = Object.create(i18n); 
+				var lang = req.session.language = req.args["lang"]||req.session.language||"en"; 
+				i.configure({
+					locales: ["en", "se"],
+					directory: self.config.site_path+"/lang",
+					defaultLocale: lang
+				}); 
+				req.__ = i.__; 
+				
+				// redirect all pages to login if we are not logged in
+				console.debug("Session user: "+req.session.user); 
+				
+				if(!req.session.user && req.path != "login"){
+					copyResponse({
+						headers: {
+							"Location": "/login"
+						}, 
+						code: 301,
+						data: "You are not logged in!"
+					}); 
+					next("end"); 
+					return; 
+				}
+				var pages = self.pool.get("res.page"); 
+				pages.find({
+					path: req.path||"home"
+				}, null, {lang: lang}).done(function(p){
+					if(!p){
+						console.debug("No page found for path "+docpath+"..."); 
+					} else {
+						page = p; 
+					}
+					next(); 
+				}); 
+			}, 
+			function(next){
+				var session = req.session; 
+				
+				console.debug("Parsing post data..."); 
+				console.debug("Setting session sid cookie: "+session.sid); 
+				resp.headers["Set-Cookie"] = "session="+session.sid+"; path=/"; 
+				
 				var form = new formidable.IncomingForm();
-				form.parse(req, function(err, fields, files) {
-					if(req.method != "POST"){
-						next(null, session); 
+				form.parse(request, function(err, fields, files) {
+					if(request.method != "POST"){
+						next(); 
 						return; 
 					}
 					
@@ -792,127 +553,87 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 					var rcpt = args["rcpt"]; 
 					if(rcpt && rcpt in plugins && "post" in plugins[rcpt]){
 						console.debug("Passing post data to plugin "+rcpt); 
-						plugins[rcpt].post({
-							path: docpath,
-							args: args, 
-							session: session}).done(function(response){
+						plugins[rcpt].post(req).done(function(response){
 							copyResponse(response); 
 							next(null, session); 
 						}); 
-					} else if(rcpt && rcpt in widgets && "post" in widgets[rcpt]){
-						console.debug("Passing post data to widget.."); 
-						widgets[rcpt].post({
-							path: docpath,
-							args: args, 
-							session: session})
+					} else if(rcpt && rcpt in self.widget_types && "post" in self.widget_types[rcpt].prototype){
+						console.debug("Passing post data to widget type "+rcpt+": obj: "+page+"..");
+						var w = self.CreateWidget(rcpt, page); 
+						w.post(req)
 						.done(function(response){
 							delete args["rcpt"];  
 							copyResponse(response); 
-							next((docpath=="ajax")?"ajax":null, session); 
+							next("ajax", session); 
 						}); 
 					} else if("post" in site){
-						site.post({
-							path: docpath,
-							args: args, 
-							session: session}).done(function(response){
+						site.post(req).done(function(response){
 							copyResponse(response); 
-							next(null, session);
+							next();
 						}); 
 					} else {
-						next(null, session); 
+						next(); 
 					}
 				}); 
 			},  
-			function(session, next){
+			function(next){
+				var session = req.session; 
+				
 				console.debug("Rendering site..."); 
 				console.log("GET: "+docpath); 
 				
-				if(docpath == "scripts"){
-					copyResponse({
-						headers: {
-							"Content-type": "text/javascript"
-						}, 
-						data: server.client_code
-					}); 
-					next(null, session); 
-					return; 
-				} else if(docpath == "styles"){
-					copyResponse({
-						headers:  {
-							"Content-type": "text/css"
-						}, 
-						data: server.client_style
-					}); 
-					next(null, session); 
-					return; 
-				}
+				
 					
 				var rcpt = args["rcpt"]; 
 				args = query.query; 
 				
 				// files are always served regardless
-				if(fs.existsSync(server.vfs.resolve("/"+docpath))){
-					console.debug("Serving file since it exists: "+docpath);
-					render_default();
-				} else if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
+				if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
 					console.debug("Passing GET data to plugin "+rcpt); 
-					plugins[rcpt].render({
-							path: docpath,
-							args: args, 
-							session: session}).done(function(response){
+					plugins[rcpt].render(req).done(function(response){
 						copyResponse(response); 
 						next(null, session); 
 					}); 
 				} else if(rcpt && rcpt in widgets && "render" in widgets[rcpt]){
 					console.debug("Passing GET data to widget: "+JSON.stringify(args)); 
-					widgets[rcpt].render({
-							path: docpath,
-							args: args, 
-							session: session}).done(function(response){
+					widgets[rcpt].render(req).done(function(response){
 						copyResponse(response); 
 						next(null, session); 
 					}); 
-				} else if("render" in site){
-					console.debug("Calling site render..."); 
-					site.render({
-							path: docpath,
-							args: args, 
-							session: session})
-					.done(function(response){
-						if(!response){
-							console.debug("Site did not render.. using default render!"); 
-							render_default(); 
-						} else { 
-							server.render("root", {
-								title: session.title||"",
-								content: response,
-							}).done(function(html){
-								copyResponse(html); 
-								next(null, session);
-							}); 
-						} 
-					});
 				} else {
-					render_default(); 
+					console.debug("Rendering ordinary page..."); 
+					if(!page){
+						renderer.render(req).done(function(resp){
+							copyResponse(resp); 
+							next(); 
+						}); 
+					} else {
+						var widget = self.CreateWidget(page.template, page); 
+						widget.render(req)
+						.done(function(response){
+							if(!response){
+								console.debug("Site did not render.. using default render!"); 
+								render_default(); 
+							} else { 
+								self.server.render("root", {
+									title: response.title||"",
+									content: response.content,
+								}).done(function(html){
+									copyResponse(html); 
+									next(null, session);
+								}); 
+							} 
+						});
+					}
 				}
-				function render_default(){
-					renderer.render({
-							path: docpath,
-							args: args, 
-							session: session}).done(function(resp){
-						copyResponse(resp); 
-						next(null, session);
-					}); 
-				}
+				
 			}
-		], function(err, session){
-			if(err){
-				console.error(err); 
-			}
+		], function(err){
 			console.debug("Passing headers to browser: "+JSON.stringify(resp.headers)); 
 			
 			// save the session
-			session.save();
+			if(req.session)
+				req.session.save();
 			
 			if(!resp.data){
 				res.writeHead(404, {}); 
@@ -934,12 +655,83 @@ SiteBoot.prototype.ClientRequest = function(req, res){
 	}
 }
 
+SiteBoot.prototype.registerObjectFields = function(name, fields){
+	var table = {}; 
+	var self = this; 
+	var ret = Q.defer(); 
+	
+	if(!(name in self.db.objects)){
+		self.db.objects[name] = table = self.db.define(name, fields); 
+		table.sync().success(function(){
+			async.eachSeries(Object.keys(fields), function(f, next){
+				//console.info("Updating field "+f+" for "+name+"!"); 
+				if(!self.config.update){
+					next(); 
+					return; 
+				}
+				var def = {}; 
+				if(typeof(fields[f]) == "object") def = fields[f]; 
+				else def = {type: fields[f]}; 
+				
+				// need to prevent setting primary key twice
+				self.db.getQueryInterface().changeColumn(table.tableName, f, def)
+				.success(function(){next();})
+				.error(function(err){
+					console.debug("ERROR: "+err); 
+					self.db.getQueryInterface().addColumn(table.tableName, f, def)
+					.success(function(){next();})
+					.error(function(err){
+						console.debug("ERROR: "+err);  
+						next(); 
+					}); 
+				}); 
+			}, function(){
+				table.sync().success(function(){
+					ret.resolve(table);
+				}).error(function(){
+					ret.resolve(table); 
+				});
+			}); 
+		}); 
+	} else {
+		var table = self.db.objects[name]; 
+		async.eachSeries(Object.keys(fields), function(f, next){
+			console.info("Registering field "+f+" for "+name+"!"); 
+			var field = {}; 
+			if(typeof(fields[f]) == "object") field = fields[f]; 
+			else field = {type: fields[f]}; 
+			
+			if(!self.config.update){
+				next(); 
+				return; 
+			} else if(!field.primaryKey){
+				self.db.getQueryInterface().changeColumn(table.tableName, f, field)
+				.success(function(){next();})
+				.error(function(err){
+					console.debug("ERROR: "+err); 
+					self.db.getQueryInterface().addColumn(table.tableName, f, field)
+					.success(function(){next();})
+					.error(function(err){
+						console.debug("ERROR: "+err);  
+						next(); 
+					}); 
+				});   
+			} else {
+				next();
+			}
+		}, function(){
+			ret.resolve(table); 
+		}); 
+	}
+	return ret.promise;  
+}
+
 SiteBoot.prototype.StartServer = function(){
 	var self = this; 
-	server.http = http.createServer(function(req, res){
+	self.http = http.createServer(function(req, res){
 		self.ClientRequest(req, res); 
 	});
-	server.http.listen(config.server_port||8000);
+	self.http.listen(self.config.server_socket||self.config.server_port||8000);
 }
 
 SiteBoot.prototype.boot = function(){
@@ -947,20 +739,8 @@ SiteBoot.prototype.boot = function(){
 	console.debug("====== BOOTING SITE ======"); 
 	
 	var self = this; 
+	var server = this.server; 
 	
-	server.q = Q; 
-	server.config = config;
-	server.basedir = BASEDIR; 
-	server.widgets = widgets; 
-	server.vfs = vfs; 
-	server.theme = {}; 
-	server.client_code = ""; 
-	server.client_style = ""; 
-	
-	server.getClientCode = function(session){
-		return "var livesite_session = "+(JSON.stringify(session) || "{}")+";\n\n"+this.client_code; 
-	}; 
-
 	var site = this.site; 
 	
 	function LoadPlugins(directory, next){
@@ -1008,7 +788,7 @@ SiteBoot.prototype.boot = function(){
 					for(var key in module.forms) {
 						var name = ((prefix)?(prefix+"_"):"")+key; 
 						forms[name] = module.forms[key]; 
-					}
+					}/*
 					for(var key in module.handlers){
 						var name = ((prefix)?(prefix+"_"):"")+key; 
 						handlers[name] = module.handlers[key]; 
@@ -1022,11 +802,13 @@ SiteBoot.prototype.boot = function(){
 								}
 							}
 						}
-					}
+					}*/
 					for(var key in module.widgets) {
 						var name = ((prefix)?(prefix+"_"):"")+key; 
-						widget_types[name] = module.widgets[key]; 
-						var x = jquery.extend({}, server); 
+						self.widget_types[name] = module.widgets[key]; 
+						//var x = jquery.extend({}, server); 
+						
+						var x = Object.create(server); 
 						
 						// replace the render method with a widget specific method that takes into account template prefixing TODO
 						x.render = function(template, data){
@@ -1038,11 +820,29 @@ SiteBoot.prototype.boot = function(){
 							return server.render(((prefix)?(prefix+"_"):"")+template, data); 
 						} 
 						
-						widget_types[name].server = x; 
+						var child = self.widget_types[name]; 
+						if(!child) throw Error("View type not defined!"); 
 						
-						if("init" in widget_types[name]) {
+						var proto = child.prototype; 
+						
+						child.prototype = Object.create(ServerView.prototype);
+						
+						child.prototype.server = x; 
+						child.prototype.widget_id = name;
+						child.prototype._name = name; 
+						
+						child.prototype.constructor = child; 
+						child.prototype.super = ServerView.prototype;
+						
+						// add in override methods
+						Object.keys(proto).map(function(x){
+							//console.debug("Overriding member "+x+" for widget "+name); 
+							child.prototype[x] = proto[x]; 
+						}); 
+						
+						/*if("init" in widget_types[name]) {
 							widget_types[name].init(x); 
-						}
+						}*/
 					}
 					
 					next(); 
@@ -1089,41 +889,87 @@ SiteBoot.prototype.boot = function(){
 							Object.keys(model.fields).map(function(x){
 								if(typeof(model.fields[x]) == "object"){
 									var typename = model.fields[x].type.toString().toUpperCase(); 
-									if(!(typename in server.db.types)){
+									if(!(typename in self.db.types)){
 										delete model.fields[x]; 
 									} else {
-										model.fields[x].type = server.db.types[typename]; 
+										model.fields[x].type = self.db.types[typename]; 
 									}
 								} else {
-									model.fields[x] = server.db.types[model.fields[x].toString().toUpperCase()]; 
+									model.fields[x] = self.db.types[model.fields[x].toString().toUpperCase()]; 
 								}
 							}); 
 							
 							console.debug(Object.keys(model.fields)); 
 							
-							server.registerObjectFields(model.tableName, model.fields).done(function(def){
-								var proto = model.constructor.prototype; 
+							self.registerObjectFields(model.tableName, model.fields).done(function(def){
+								var child = model.constructor; 
+								if(!child) 
+									throw Error("Model must contain a constructor property!"); 
+								if(!def) 
+									throw Error("There was an error in your definition!"); 
+									
+								var proto = child.prototype; 
 								
-								model.constructor.prototype = new ServerObject(def, server); 
+								if(model.name in self.db.objects){
+									console.debug("DDDDD overriding object "+model.name); 
+									child.prototype = Object.create(self.db.objects[model.name].prototype); 
+									child.prototype.super = self.db.objects[model.name].prototype; 
+								} else {
+									child.prototype = Object.create(ServerObject.prototype);
+									child.prototype.super = ServerObject.prototype;
+								}
 								
+								child.prototype._table = def; 
+								child.prototype._object_name = model.name; 
+								child.prototype.server = self.server; 
+								child.prototype.constructor = child; 
+								
+								// add in override methods
 								Object.keys(proto).map(function(x){
-									model.constructor.prototype[x] = proto[x]; 
+									child.prototype[x] = proto[x]; 
+								}); 
+								console.debug("====DDDDDDDDD "+model.name+" "+child.prototype+" "+child.prototype.super+" "+child.prototype._table); 
+								var obj = self.db.objects[model.name] = child; 
+								
+								// define object getters and setters for each field
+								Object.keys(model.fields).map(function(f){
+									//console.debug("Defining getter for field "+f+" of "+model.name); 
+									obj.prototype.__defineGetter__(f, function(){
+										//if(this._write && (f in this._write))
+										//	return this._write[f]; 
+										if(this._object) 
+											return this._object[f]; 
+										return null; 
+									});
+									obj.prototype.__defineSetter__(f, function(v){
+										//if(!this._write) this._write = {}; 
+										this._write[f] = true; 
+										if(this._object)
+											this._object[f] = v; 
+									});
 								}); 
 								
-								model.constructor.prototype.super = ServerObject.prototype; 
-								model.constructor.prototype.constructor = model.constructor; 
-								
-								server.db.objects[model.name] = new model.constructor(); 
-								server.db.objects[model.name].table = def; 
 								//server.db.objects[model.tableName][model.name] = model.constructor; 
 									
 								def.sync().success(function(){
-									if("init" in server.db.objects[model.name])
-										server.db.objects[model.name].init().done(next); 
-									else
+									/*obj.init().done(function(){
 										next();
+									}); */
+									next(); 
 								});  
+								if(model.index && self.config.update){
+									self.db.getQueryInterface().removeIndex(def.tableName, def.tableName+"_main_index").done(function(){
+									
+										self.db.getQueryInterface().addIndex(def.tableName, model.index, {
+											indexName: def.tableName+"_main_index",
+											indicesType: 'UNIQUE'
+										}); 
+									}).error(function(err){
+										console.error(err); 
+									}); 
+								}
 							}); 
+							
 						}, function(){
 							next(); 
 						}); 
@@ -1131,6 +977,9 @@ SiteBoot.prototype.boot = function(){
 				},
 				// load client code
 				function(next){
+					if(!self.client_code)
+						self.client_code = ""; 
+						
 					if(!fs.existsSync(path+"/client")){
 						next(); 
 						return; 
@@ -1141,7 +990,7 @@ SiteBoot.prototype.boot = function(){
 							var file = files[key]; 
 							if(/\.js$/.test(file)){
 								console.log("Loading client script "+path+"/client/"+file); 
-								server.client_code += fs.readFileSync(path+"/client/"+file); 
+								self.client_code += fs.readFileSync(path+"/client/"+file); 
 							}
 						}
 						next(); 
@@ -1150,7 +999,8 @@ SiteBoot.prototype.boot = function(){
 				// load css code
 				function(next){
 					var dirname = path+"/css/"; 
-					if(!("client_style" in server)) server.client_style = ""; 
+					if(!self.client_style)
+						self.client_style = ""; 
 					if(!fs.existsSync(dirname)){
 						next(); 
 						return; 
@@ -1163,7 +1013,7 @@ SiteBoot.prototype.boot = function(){
 								console.log("Loading stylesheet "+dirname+file); 
 								var css = fs.readFileSync(dirname+file); 
 								if(css)
-									server.client_style += css; 
+									self.client_style += css; 
 							}
 						}
 						next(); 
@@ -1181,7 +1031,7 @@ SiteBoot.prototype.boot = function(){
 						files.map(function(file){
 							if(fs.statSync(dirname+file).isDirectory()){
 								console.log("Adding mailer template: "+dirname+file); 
-								cache.mailer_templates[file] = {
+								self.cache.mailer_templates[file] = {
 									path: dirname,
 									template: file
 								}; 
@@ -1220,7 +1070,7 @@ SiteBoot.prototype.boot = function(){
 		},
 		function(cb){
 			console.debug("Loading site data..."); 
-			LoadModule(config.site_path, function(module){
+			LoadModule(self.config.site_path, function(module){
 				if(!module){
 					console.error("Could not load main site module!");
 					process.exit(); 
@@ -1230,7 +1080,7 @@ SiteBoot.prototype.boot = function(){
 		},
 		function(next){
 			console.debug("Loading site plugins.."); 
-			LoadPlugins(config.site_path+"/plugins", next); 
+			LoadPlugins(self.config.site_path+"/plugins", next); 
 		}
 	], function(){
 		if (cluster.isMaster) {
@@ -1250,13 +1100,13 @@ SiteBoot.prototype.boot = function(){
 				}
 			}); 
 		} else {
-			process.on('uncaughtException', function (err) {
+			/*process.on('uncaughtException', function (err) {
 				var crash = "=============================\n";
 				crash += "Program crashed on "+(new Date())+"\n"; 
-				crash += err.stack; 
+				crash += (err)?err.stack:err; 
 				console.error(crash); 
-				fs.appendFile(server.config.site_path+"/crashlog.log", crash); 
-			});
+				fs.appendFile(self.config.site_path+"/crashlog.log", crash); 
+			});*/
 			
 			var server_started = false; 
 			setTimeout(function(){
@@ -1268,7 +1118,7 @@ SiteBoot.prototype.boot = function(){
 			site.init(server).done(function(){
 				self.StartServer(); 
 				server_started = true; 
-				console.log("Server listening...");
+				console.log("Server listening on "+(self.config.server_socket||self.config.server_port||"localhost"));
 			});
 		}
 	}); 

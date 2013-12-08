@@ -1,18 +1,7 @@
 var server = {}
 var $ = require("jquery"); 
 
-var Widget; 
-
-exports.init = function(x){
-	server = x; 
-	return Widget; 
-}
-
-exports.new = function(x){
-	return new Widget(x); 
-}
-
-Widget = function(x){
+var Widget = function(x){
 	this.server = x; 
 	this.model = {
 		id: "default", // default id
@@ -51,4 +40,8 @@ Widget.prototype.data = function(data){
 	} else {
 		return this.model; 
 	}
+}
+
+exports.module = {
+	type: Widget
 }

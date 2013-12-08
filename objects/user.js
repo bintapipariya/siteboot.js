@@ -1,8 +1,9 @@
 var Q = require("q"); 
 var crypto = require("crypto"); 
 
-function User(){
-	
+function User(obj){
+	this._object = obj; 
+	return this.super.constructor.call(this); 
 }
 
 User.prototype.create = function(opts){
@@ -40,27 +41,19 @@ User.prototype.login = function(opts){
 	// hash the password
 	hash = hash || crypto.createHash("sha1").update(password).digest("hex"); 
 	
-	self.search({username: username}).done(function(ids){
-		if(ids.length){
-			self.browse(ids).done(function(users){
-				if(users && users[ids[0]]){
-					var u = users[ids[0]]; 
-					console.debug("Logging in user "+u.hash+" with "+hash); 
-					if(u.hash == hash){
-						session["user"] = {
-							id: u.id, 
-							username: u.username, 
-							loggedin: true
-						}
-						
-						result.resolve(u); 
-					} else {
-						result.reject("Wrong username or password!"); 
-					}
-				} else {
-					result.reject("Could not login user!"); 
-				}
-			}); 
+	self.find({username: username}).done(function(user){
+		if(user){
+			var u = user; 
+			console.debug("Logging in user "+u.hash+" with "+hash); 
+			if(u.hash == hash){
+				session["user"] = user; 
+				session.user_id = user.id; 
+				session.save().done(function(){
+					result.resolve(u); 
+				}); 
+			} else {
+				result.reject("Wrong username or password!"); 
+			}
 		} else {
 			console.error("User "+username+" not found!"); 
 			result.resolve(); 
@@ -69,17 +62,45 @@ User.prototype.login = function(opts){
 	return result.promise; 
 }
 
+User.prototype.logout = function(){
+	var ret = this.server.defer(); 
+	ret.resolve(); 
+	return ret.promise; 
+}
+
 exports.model = {
 	constructor: User,
 	name: "res.user",
-	tableName: "users",
 	fields: {
 		id: {
 			type: "integer",
-			primaryKey: true
+			primaryKey: true,
+			autoIncrement: true
 		},
-		username: "string",
+		username: {
+			type: "string",
+			/*validate: {
+				is: ["^[a-z0-9A-Z_\-\.]+$", ""]
+			}*/
+		}, 
+		company: "string", 
+		ssn: "string", 
+		first_name: "string", 
+		last_name: "string", 
+		contact_address: "string", 
+		billing_address: "string",
+		billing_period: {
+			type: "integer"
+		},
+		billing_plan: "string",
+		billing_email: "string", 
+		email: {
+			type: "string",
+			allowNull: false
+		},
+		phone: "string", 
 		hash: "string",
 		role: "string"
-	}
+	},
+	index: ["username"]
 }

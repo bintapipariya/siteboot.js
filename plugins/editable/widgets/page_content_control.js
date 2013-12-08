@@ -4,15 +4,6 @@ var async = require("async");
 
 var Widget; 
 
-exports.init = function(x){
-	server = x; 
-	return Widget; 
-}
-
-exports.new = function(x){
-	return new Widget(x); 
-}
-
 var JSON = require("JSON"); 
 
 Widget = function(x){
@@ -152,4 +143,8 @@ Widget.prototype.data = function(data){
 	} else {
 		return this.model; 
 	}
+}
+
+exports.module = {
+	type: Widget
 }

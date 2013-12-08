@@ -1,9 +1,5 @@
 var JSON = require("JSON"); 
 
-exports.module = {
-	name: "Editable Hero Widget",
-	does: "Implements an editable jumbotron control that the user can edit.",
-}; 
 
 var Widget = function(x){
 	this.server = x; 
@@ -13,11 +9,6 @@ var Widget = function(x){
 	}; 
 }
 
-exports.init = function(){}
-
-exports.new = function(x){
-	return new Widget(x); 
-}
 
 Widget.prototype.data = function(data){
 	if(data){
@@ -62,4 +53,8 @@ Widget.prototype.render = function(req){
 		}); 
 	}); 
 	return result.promise; 
+}
+
+exports.module = {
+	type: Widget
 }

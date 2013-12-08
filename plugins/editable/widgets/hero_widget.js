@@ -9,14 +9,6 @@ var Widget = function(x){
 	}; 
 }
 
-exports.init = function(){}
-exports.widget = {
-	name: "Editable Hero Widget"
-}; 
-
-exports.new = function(x){
-	return new Widget(x); 
-}
 
 Widget.prototype.data = function(data){
 	if(data){
@@ -63,6 +55,7 @@ Widget.prototype.render = function(req){
 	return result.promise; 
 }
 
-exports.render = function(path, args, session, callback){
-	callback("Deprecated callback!"); 
+
+exports.module = {
+	type: Widget
 }

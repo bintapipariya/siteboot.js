@@ -32,7 +32,7 @@ function LoadScripts(dir, callback){
 				//});
 				//HandlerInitCompleted(hr); 
 				//handlers[script_name] = hr; 
-				scripts[script_name] = hr; 
+				scripts[script_name] = hr.module; 
 				console.log("SCRIPT LOADED: "+script_name);
 			}
 			catch(e){
@@ -104,8 +104,10 @@ exports.LoadModule = function(path, callback){
 			LoadScripts(path+"/widgets", function(scripts){
 				module.widgets = {}; 
 				for(var key in scripts){
-					module.widgets[key] = scripts[key]; 
-					module.widgets[key].id = key; 
+					if(scripts[key] && scripts[key].type)
+						module.widgets[key] = scripts[key].type;
+					else
+						console.error("Widget "+key+" does not have correct 'type' member exported from the module!"); 
 				}
 				callback(); 
 			});

@@ -1,28 +1,3 @@
-exports.module = {
-	name: "Navbar Widget", 
-	does: "A navbar widget with brand logo.",
-	options: {
-		brand: {
-			label: "The label to use as the brand name",
-		}, 
-		items: [
-			{
-				label: "Item text",
-				link: "Link for the menu item"
-			}, 
-			{
-				label: "Item two with submenu",
-				link: "link to the item",
-				subitems: [
-					{
-						label: "Subitem text", 
-						link: "link for the menu item"
-					}
-				]
-			}
-		]
-	}
-}
 
 var Widget = function(x){
 	this.model = {
@@ -79,11 +54,6 @@ Widget.prototype.data = function(data){
 	} 
 	return this; 
 }
-
-exports.init = function(x){
-
-}
-
-exports.new = function(x){
-	return new Widget(x); 
+exports.module = {
+	type: Widget
 }
