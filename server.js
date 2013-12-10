@@ -296,7 +296,7 @@ SiteBoot.prototype.RenderFragments = function(template, fragments, context){
 	if(!fragments) fragments = {}; 
 	
 	Object.keys(fragments).map(function(x){
-		if(typeof fragments[x] == "object" && "done" in fragments[x]){
+		if(fragments[x] && typeof fragments[x] == "object" && "done" in fragments[x]){
 			proms.push([x, fragments[x] ]); 
 		} else {
 			data[x] = fragments[x]; 
@@ -508,17 +508,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				// redirect all pages to login if we are not logged in
 				console.debug("Session user: "+req.session.user); 
 				
-				if(!req.session.user && req.path != "login"){
-					copyResponse({
-						headers: {
-							"Location": "/login"
-						}, 
-						code: 301,
-						data: "You are not logged in!"
-					}); 
-					next("end"); 
-					return; 
-				}
+				
 				var pages = self.pool.get("res.page"); 
 				pages.find({
 					path: req.path||"home"
@@ -608,6 +598,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 							next(); 
 						}); 
 					} else {
+						// render the widget, get the title and wrap the data into the root template
 						var widget = self.CreateWidget(page.template, page); 
 						widget.render(req)
 						.done(function(response){
@@ -617,9 +608,10 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 							} else { 
 								self.server.render("root", {
 									title: response.title||"",
-									content: response.content,
+									content: response.data||response,
 								}).done(function(html){
-									copyResponse(html); 
+									response.data = html; 
+									copyResponse(response); 
 									next(null, session);
 								}); 
 							} 
@@ -928,7 +920,7 @@ SiteBoot.prototype.boot = function(){
 								Object.keys(proto).map(function(x){
 									child.prototype[x] = proto[x]; 
 								}); 
-								console.debug("====DDDDDDDDD "+model.name+" "+child.prototype+" "+child.prototype.super+" "+child.prototype._table); 
+								
 								var obj = self.db.objects[model.name] = child; 
 								
 								// define object getters and setters for each field
@@ -952,22 +944,23 @@ SiteBoot.prototype.boot = function(){
 								//server.db.objects[model.tableName][model.name] = model.constructor; 
 									
 								def.sync().success(function(){
-									/*obj.init().done(function(){
-										next();
-									}); */
+									if(model.index && self.config.update){
+										self.db.getQueryInterface().removeIndex(def.tableName, def.tableName+"_main_index").success(function(){
+										
+											self.db.getQueryInterface().addIndex(def.tableName, model.index, {
+												indexName: def.tableName+"_main_index",
+												indicesType: 'UNIQUE'
+											}); 
+										}).error(function(err){
+											self.db.getQueryInterface().addIndex(def.tableName, model.index, {
+												indexName: def.tableName+"_main_index",
+												indicesType: 'UNIQUE'
+											}); 
+										}); 
+									}
 									next(); 
 								});  
-								if(model.index && self.config.update){
-									self.db.getQueryInterface().removeIndex(def.tableName, def.tableName+"_main_index").done(function(){
-									
-										self.db.getQueryInterface().addIndex(def.tableName, model.index, {
-											indexName: def.tableName+"_main_index",
-											indicesType: 'UNIQUE'
-										}); 
-									}).error(function(err){
-										console.error(err); 
-									}); 
-								}
+								
 							}); 
 							
 						}, function(){
