@@ -41,6 +41,7 @@ var assert = require("assert");
 var Q = require("q"); 
 var jquery = require("jquery");
 var i18n = require("i18n"); 
+var $ = require("jquery"); 
 
 var cluster = require("cluster");
 var ServerInterface = require("./lib/server_interface").ServerInterface; 
@@ -289,11 +290,35 @@ SiteBoot.prototype.CreateWidget = function(view, object){
 }
 
 SiteBoot.prototype.RenderFragments = function(template, fragments, context){
+	return this.RenderFragmentsRaw(forms[template], fragments, context); 
+}
+
+SiteBoot.prototype.RenderFragmentsRaw = function(template, fragments, context){
 	var proms = []; 
 	var result = Q.defer();  
+	var self = this; 
 	
 	var data = {}; 
 	if(!fragments) fragments = {}; 
+	
+	// parse out the embedded widgets
+	// syntax {{@<widgetclass> arg1="value" arg2="value"}}
+	var tr = /\{\{@\s*([.0-9a-zA-Z]+)(.*?)\}\}/g;
+	var results = {}; 
+	template = template.replace(tr, function(){
+		var argparse = /([^\s]+)=(["][^"]*["]|[^\s]*)/g; 
+		var args = {}; 
+		while(m = argparse.exec(arguments[2])){
+			//console.log(m); 
+			args[m[1]] = m[2].replace(/\"/g, ""); 
+		}
+		results[arguments[1]] = args; 
+		var view = "view_"+arguments[3]; 
+		
+		console.debug("Will use '"+arguments[1]+"' widget for "+view); 
+		proms.push([view, self.CreateWidget(arguments[1], args).render(context)]); 
+		return "{{{"+view+"}}}"; 
+	}); 
 	
 	Object.keys(fragments).map(function(x){
 		if(fragments[x] && typeof fragments[x] == "object" && "done" in fragments[x]){
@@ -304,22 +329,19 @@ SiteBoot.prototype.RenderFragments = function(template, fragments, context){
 	}); 
 	// render all promises
 	async.eachSeries(proms, function(x, next){
-		console.debug("Rendering fragment "+x[0]+" for "+template); 
+		//console.debug("Rendering fragment "+x[0]+" for "+template); 
 		var timeout = setTimeout(function(){
 			console.error("Rendering timed out for "+x[0]);
 			data[x[0]] = "Timed out!"; 
 			next(); 
 		}, 2000); 
 		x[1].done(function(html){
-			console.debug("Done rendering fragment "+x[0]+" for "+template); 
+			//console.debug("Done rendering fragment "+x[0]+" for "+template); 
 			clearTimeout(timeout); 
 			data[x[0]] = html; 
 			next(); 
 		}); 
 	}, function(){
-		var form = forms[template]||""; 
-		
-		console.debug("Rendering template "+template+" context = "+context); 
 		data["__"] = function(){
 			return function(text){
 				if(context)
@@ -328,7 +350,8 @@ SiteBoot.prototype.RenderFragments = function(template, fragments, context){
 					return text + "(untranslated)"; 
 			}
 		}
-		result.resolve(mustache.render(forms[template]||"", data)); 
+		var html = mustache.render(template||"", data); 
+		result.resolve(html); 
 	}); 
 	return result.promise; 
 }
@@ -358,6 +381,9 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 		path: docpath, 
 		args: args,
 		session: null,
+		render: function(template, fragments){
+			return self.RenderFragments(template, fragments, this); 
+		}
 	}
 	
 	try {
@@ -368,11 +394,22 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				var path = req.path; 
 				
 				var filepath = vfs.resolve("/"+path); 
-				//console.debug("Trying to serve ordinary file "+filepath+" ("+path+")..."); 
+				console.debug("Trying to serve ordinary file "+filepath+" ("+path+")..."); 
 				if(!filepath){
-					res.resolve(); 
-					return res.promise;
+					filepath = self.server.config.site_path+"/"+path; 
+					
+					try {
+						if(!fs.existsSync(filepath) && !fs.lstatSync(filepath).isDirectory()){
+							res.resolve(); 
+							return res.promise;
+						}
+					} catch(e){
+						res.resolve(); 
+						return res.promise;
+					}
 				}
+				console.debug("Serving file "+filepath); 
+				
 				fs.readFile(filepath, "binary", function(err, data){
 					if(err) {
 						res.resolve({
@@ -428,7 +465,14 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 		var page = null; 
 		async.waterfall([
 			function(next){
+				var filepath = self.server.config.site_path+"/"+docpath; 
 				if(fs.existsSync(self.vfs.resolve("/"+docpath))){
+					console.debug("Serving file since it exists: "+docpath);
+					renderer.render(req).done(function(resp){
+						copyResponse(resp); 
+						next("end"); 
+					}); 
+				} else if(fs.existsSync(filepath) && !fs.lstatSync(filepath).isDirectory()){
 					console.debug("Serving file since it exists: "+docpath);
 					renderer.render(req).done(function(resp){
 						copyResponse(resp); 
@@ -497,7 +541,8 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				
 				// set up session locale
 				var i = Object.create(i18n); 
-				var lang = req.session.language = req.args["lang"]||req.session.language||"en"; 
+				var lang = req.session.language = (req.args["lang"]||req.session.language||"en"); 
+				
 				i.configure({
 					locales: ["en", "se"],
 					directory: self.config.site_path+"/lang",
@@ -510,9 +555,11 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				
 				
 				var pages = self.pool.get("res.page"); 
+				console.debug("Looking up page "+req.path+" language: "+lang); 
 				pages.find({
-					path: req.path||"home"
-				}, null, {lang: lang}).done(function(p){
+					path: req.path||"home",
+					language: req.session.language
+				}).done(function(p){
 					if(!p){
 						console.debug("No page found for path "+docpath+"..."); 
 					} else {
@@ -535,6 +582,8 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 						return; 
 					}
 					
+					req.args["files"] = files; 
+					
 					console.log("POST: "+docpath+" args: "+JSON.stringify(fields)); 
 					console.debug("FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
 					
@@ -548,14 +597,23 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 							next(null, session); 
 						}); 
 					} else if(rcpt && rcpt in self.widget_types && "post" in self.widget_types[rcpt].prototype){
-						console.debug("Passing post data to widget type "+rcpt+": obj: "+page+"..");
-						var w = self.CreateWidget(rcpt, page); 
-						w.post(req)
-						.done(function(response){
-							delete args["rcpt"];  
-							copyResponse(response); 
-							next("ajax", session); 
-						}); 
+						console.debug("Passing post data to widget type "+rcpt);
+						var objs = self.server.pool.get(args["object_type"]||rcpt); 
+						
+						function do_post(obj){
+							var w = self.CreateWidget(rcpt, obj||{}); 
+							w.post(req).done(function(response){
+								console.debug("Post callback completed: "+JSON.stringify(response));  
+								copyResponse(response); 
+								next("ajax", session); 
+							}); 
+						}
+						
+						if(args["object_id"]){
+							objs.find({id: args["object_id"]}).done(do_post); 
+						} else {
+							do_post({}); 
+						}
 					} else if("post" in site){
 						site.post(req).done(function(response){
 							copyResponse(response); 
@@ -572,8 +630,6 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				console.debug("Rendering site..."); 
 				console.log("GET: "+docpath); 
 				
-				
-					
 				var rcpt = args["rcpt"]; 
 				args = query.query; 
 				
@@ -594,7 +650,10 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 					console.debug("Rendering ordinary page..."); 
 					if(!page){
 						renderer.render(req).done(function(resp){
-							copyResponse(resp); 
+							copyResponse({
+								code: 404,
+								data: "Not found!"
+							}); 
 							next(); 
 						}); 
 					} else {
@@ -605,10 +664,65 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 							if(!response){
 								console.debug("Site did not render.. using default render!"); 
 								render_default(); 
+							} else if(Object.prototype.toString.call(response) === "[object Object]"){
+								console.debug("Response data: "+Object.prototype.toString.call(response.data)); 
+								
+								self.server.render("root", {
+									title: "",
+									content: response.data,
+								}, req).done(function(html){
+									response.data = html; 
+									copyResponse(response); 
+									next(null, session);
+								});
+								return; 
+								
+								function render_data(template, next){
+									var html = $(template);
+									var data = {}; 
+									Object.keys(response.data).map(function(x){data[x] = response.data[x]}); 
+								
+									//console.debug("Working with template: "+template); 
+									html.find("div[data-view]").each(function(i, v){
+										var view = $(v).attr("data-view"); 
+										if(!view) return; 
+										
+										console.debug("Replacing view "+view+" with {{{view_"+i+"}}}"); 
+										data["view_"+i] = self.server.create_widget(view).render(req);
+										$(v).replaceWith("{{{view_"+i+"}}}"); 
+									}); 
+									self.server.render_raw($(html).html(), data).done(function(html){
+										next(html); 
+									}); 
+								}
+								
+								render_data(forms[page.template], function(html){
+									if(!req.session.user){
+										render_data(html, function(html){
+											self.server.render("root", {
+												title: "",
+												content: html,
+											}).done(function(html){
+												response.data = html; 
+												copyResponse(response); 
+												next(null, session);
+											}); 
+										}); 
+									} else {
+										self.server.render("root", {
+											title: "",
+											content: html,
+										}).done(function(html){
+											response.data = html; 
+											copyResponse(response); 
+											next(null, session);
+										}); 
+									}
+								}); 
 							} else { 
 								self.server.render("root", {
 									title: response.title||"",
-									content: response.data||response,
+									content: response,
 								}).done(function(html){
 									response.data = html; 
 									copyResponse(response); 
@@ -736,9 +850,14 @@ SiteBoot.prototype.boot = function(){
 	var site = this.site; 
 	
 	function LoadPlugins(directory, next){
+		console.debug("Loading plugins from "+directory); 
+		if(!fs.existsSync(directory)){
+			next(); 
+			return; 
+		}
 		fs.readdir(directory, function(err, files) {
 			var pl = []; 
-			if(!files){
+			if(err || !files){
 				next(); 
 				return; 
 			}
@@ -1108,6 +1227,8 @@ SiteBoot.prototype.boot = function(){
 					process.exit(); 
 				}
 			}, 30000); 
+			
+			console.debug("Starting site..."); 
 			site.init(server).done(function(){
 				self.StartServer(); 
 				server_started = true; 

@@ -85,13 +85,6 @@
 		 * @return jqXHR
 		 */
 	$.upload = function( url, data, callback, type) {
-			// shift arguments if data argument was omitted
-		if ( jQuery.isFunction( data ) ) {
-			type = type || callback;
-			callback = data;
-			data = undefined;
-		}
-
 		return $.ajax({
 			/*
 			 * processData and contentType must be false to prevent jQuery
@@ -128,10 +121,13 @@ var jbImagesDialog = {
 		
 		var data = new FormData( $("#upl")[0]); 
 		data.append("file_upload", 1); 
+		data.append("rcpt", "page.content"); 
 		
-		$.upload("/edit_helper", data, function(result){
+		//alert("Uploading..."+JSON.stringify(data)); 
+		$.upload("/", data, function(result){
 			try {
-				jbImagesDialog.uploadFinish(JSON.parse(result)); 
+				var data = JSON.parse(result); 
+				jbImagesDialog.uploadFinish(data); 
 			} catch(e){
 				alert(e+": "+e.stack);
 			}
@@ -178,8 +174,8 @@ var jbImagesDialog = {
 			
 			var w = this.getWin();
 			tinymce = w.tinymce;
-		
-			tinymce.EditorManager.activeEditor.insertContent('<img src="' + result.filename +'">');
+			alert(result.file); 
+			tinymce.EditorManager.activeEditor.insertContent('<img src="' + result.file +'">');
 			
 			this.close();
 		}

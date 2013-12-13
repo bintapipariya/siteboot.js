@@ -14,6 +14,31 @@ Widget.prototype.post = function(req){
 	var ret = this.server.defer(); 
 	var self = this; 
 	
+	if("logout" in req.args ){
+		if(req.session.user){
+			req.session.user_id = null; 
+			req.session.save().done(function(){
+				delete req.session.user; 
+				req.session.user = null; 
+				ret.resolve({
+					headers: {
+						"Location": "/"
+					}, 
+					data: JSON.stringify({success: "Successfully logged out!"})
+				}); 
+			}); 
+		} else {
+			console.debug("Logout: user not logged in!"); 
+			ret.resolve({
+				headers: {
+					"Location": "/"
+				}, 
+				data: JSON.stringify({success: "You are not logged in!"})
+			}); 
+		}
+		return ret.promise; 
+	}
+	
 	if(!req.session.user || !req.args["id"] || 
 		(req.session.user.id != req.args["id"])){
 		console.debug("User ID passed in post does not match ID of currently logged in user! ("+req.session.user.id+" != "+req.args["id"]+")"); 
@@ -21,11 +46,12 @@ Widget.prototype.post = function(req){
 		return ret.promise; 
 	}
 	
+	
 	var users = self.server.pool.get("res.user"); 
 	users.find({id: req.args["id"]}).done(function(user){
 		if(!user){
 			ret.resolve(JSON.stringify({error: "User ID "+req.args["id"]+" not found!"})); 
-			return; 
+			return ret.promise; 
 		}
 		
 		delete req.args["id"]; 
