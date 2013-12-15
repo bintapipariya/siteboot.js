@@ -289,6 +289,44 @@ SiteBoot.prototype.CreateWidget = function(view, object){
 	return widget; 
 }
 
+SiteBoot.prototype.RenderWidget = function(name, req){
+	var ret = this.server.defer(); 
+	var self = this; 
+	
+	var widgets = self.server.pool.get("res.widget"); 
+	console.debug("RenderWidget: "+name); 
+	widgets.find({name: name, language: req.language}).done(function(w){
+		if(!w){
+			ret.resolve({
+				object: {},
+				html: "Widget not found!"
+			});
+			return; 
+		}
+		var widget = self.CreateWidget(w.type, w); 
+		widget.render(req).done(function(obj){
+			var type = Object.prototype.toString.call(obj); 
+			if(!obj || (type != "[object Object]")){
+				console.error("Error while rendering "+name+" - returned object is not an object! ("+type+")"); 
+				ret.resolve({
+					object: {},
+					html: "Undefined"
+				});
+				return; 
+			}
+			
+			self.RenderFragmentsRaw(w.code, obj, req).done(function(html){
+				ret.resolve({
+					object: obj,
+					html: html
+				}); 
+			}); 
+		}); 
+	});
+							
+	return ret.promise; 
+}
+
 SiteBoot.prototype.RenderFragments = function(template, fragments, context){
 	return this.RenderFragmentsRaw(forms[template], fragments, context); 
 }
@@ -300,25 +338,6 @@ SiteBoot.prototype.RenderFragmentsRaw = function(template, fragments, context){
 	
 	var data = {}; 
 	if(!fragments) fragments = {}; 
-	
-	// parse out the embedded widgets
-	// syntax {{@<widgetclass> arg1="value" arg2="value"}}
-	var tr = /\{\{@\s*([.0-9a-zA-Z]+)(.*?)\}\}/g;
-	var results = {}; 
-	template = template.replace(tr, function(){
-		var argparse = /([^\s]+)=(["][^"]*["]|[^\s]*)/g; 
-		var args = {}; 
-		while(m = argparse.exec(arguments[2])){
-			//console.log(m); 
-			args[m[1]] = m[2].replace(/\"/g, ""); 
-		}
-		results[arguments[1]] = args; 
-		var view = "view_"+arguments[3]; 
-		
-		console.debug("Will use '"+arguments[1]+"' widget for "+view); 
-		proms.push([view, self.CreateWidget(arguments[1], args).render(context)]); 
-		return "{{{"+view+"}}}"; 
-	}); 
 	
 	Object.keys(fragments).map(function(x){
 		if(fragments[x] && typeof fragments[x] == "object" && "done" in fragments[x]){
@@ -335,10 +354,10 @@ SiteBoot.prototype.RenderFragmentsRaw = function(template, fragments, context){
 			data[x[0]] = "Timed out!"; 
 			next(); 
 		}, 2000); 
-		x[1].done(function(html){
+		x[1].done(function(obj){
 			//console.debug("Done rendering fragment "+x[0]+" for "+template); 
 			clearTimeout(timeout); 
-			data[x[0]] = html; 
+			data[x[0]] = obj.html; 
 			next(); 
 		}); 
 	}, function(){
@@ -351,7 +370,54 @@ SiteBoot.prototype.RenderFragmentsRaw = function(template, fragments, context){
 			}
 		}
 		var html = mustache.render(template||"", data); 
-		result.resolve(html); 
+		
+		// parse out the embedded widgets
+		// syntax {{@<widgetclass> arg1="value" arg2="value"}}
+		var tr = /\[\[\s*([\.0-9a-zA-Z:_]+)(.*?)\]\]/g;
+		var results = {}; 
+		var proms = {}; 
+		
+		html = html.replace(tr, function(){
+			var argparse = /([^\s]+)=(["][^"]*["]|[^\s]*)/g; 
+			
+			var request = {}; 
+			Object.keys(context).map(function(x){request[x] = context[x];}); 
+			var args = {}; 
+			Object.keys(context.args).map(function(x){args[x] = context.args[x];}); 
+			
+			while(m = argparse.exec(arguments[2])){
+				console.log("Adding argument "+m[1]+": "+m[2].replace(/\"/g, "")); 
+				args[m[1]] = m[2].replace(/\"/g, ""); 
+			}
+			results[arguments[1]] = args; 
+			var view = "view_"+arguments[3]; 
+			
+			console.debug("Adding to render queue: "+arguments[0]); 
+			//proms[view] = self.CreateWidget(arguments[1], args).render(context); 
+			request.args = args; 
+			
+			proms[view] = self.RenderWidget(arguments[1], request); 
+			
+			return "{{{"+view+"}}}"; 
+		}); 
+		//}
+		// at this point the html contains all translated labels and the only thing that is left to do is replace the inserted tags with the actual content. In order to do that, we need to loop through the content to be rendered, render it, and then to run render on the result. 
+		if(Object.keys(proms).length){
+			// Only render if there is something to render
+			self.RenderFragmentsRaw(html, proms, context).done(function(html){
+				result.resolve(html); 
+				//wrap_result(html); 
+			}); 
+		} else {
+			//wrap_result(html);
+			result.resolve(html); 
+		}
+		function wrap_result(html){
+			//result.resolve(html); 
+			result.resolve(mustache.render(forms["widget.wrapper"], {
+				content: html
+			})); 
+		}
 	}); 
 	return result.promise; 
 }
@@ -380,6 +446,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 	var req = {
 		path: docpath, 
 		args: args,
+		meta: {}, 
 		session: null,
 		render: function(template, fragments){
 			return self.RenderFragments(template, fragments, this); 
@@ -541,7 +608,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				
 				// set up session locale
 				var i = Object.create(i18n); 
-				var lang = req.session.language = (req.args["lang"]||req.session.language||"en"); 
+				var lang = req.language = req.session.language = (req.args["lang"]||req.session.language||"en"); 
 				
 				i.configure({
 					locales: ["en", "se"],
@@ -598,10 +665,11 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 						}); 
 					} else if(rcpt && rcpt in self.widget_types && "post" in self.widget_types[rcpt].prototype){
 						console.debug("Passing post data to widget type "+rcpt);
-						var objs = self.server.pool.get(args["object_type"]||rcpt); 
+						//var objs = self.server.pool.get(args["object_type"]||self.widget_types[rcpt].model||"res.widget"); 
+						var objs = self.server.pool.get("res.widget"); 
 						
 						function do_post(obj){
-							var w = self.CreateWidget(rcpt, obj||{}); 
+							var w = self.CreateWidget(rcpt, obj); 
 							w.post(req).done(function(response){
 								console.debug("Post callback completed: "+JSON.stringify(response));  
 								copyResponse(response); 
@@ -633,6 +701,14 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				var rcpt = args["rcpt"]; 
 				args = query.query; 
 				
+				function not_found(next){
+					copyResponse({
+						code: 404,
+						data: "Not found!"
+					}); 
+					next(); 
+				}
+				
 				// files are always served regardless
 				if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
 					console.debug("Passing GET data to plugin "+rcpt); 
@@ -647,90 +723,28 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 						next(null, session); 
 					}); 
 				} else {
-					console.debug("Rendering ordinary page..."); 
-					if(!page){
-						renderer.render(req).done(function(resp){
-							copyResponse({
-								code: 404,
-								data: "Not found!"
-							}); 
-							next(); 
-						}); 
-					} else {
-						// render the widget, get the title and wrap the data into the root template
-						var widget = self.CreateWidget(page.template, page); 
-						widget.render(req)
-						.done(function(response){
-							if(!response){
-								console.debug("Site did not render.. using default render!"); 
-								render_default(); 
-							} else if(Object.prototype.toString.call(response) === "[object Object]"){
-								console.debug("Response data: "+Object.prototype.toString.call(response.data)); 
-								
-								self.server.render("root", {
-									title: "",
-									content: response.data,
-								}, req).done(function(html){
-									response.data = html; 
-									copyResponse(response); 
+					console.debug("Rendering ordinary page "+JSON.stringify(req)); 
+					var pages = self.server.pool.get("res.page"); 
+					pages.find({
+						path: req.path||"home",
+						language: req.session.language
+					}).done(function(page){
+						if(!page){
+							not_found(next); 
+							return; 
+						} else {
+							self.RenderWidget(page.template, req).done(function(result){
+								var title = mustache.render(page.title_template, req.meta); 
+								req.render("root", {
+									title: title,
+									content: result.html,
+								}).done(function(html){
+									copyResponse(html); 
 									next(null, session);
 								});
-								return; 
-								
-								function render_data(template, next){
-									var html = $(template);
-									var data = {}; 
-									Object.keys(response.data).map(function(x){data[x] = response.data[x]}); 
-								
-									//console.debug("Working with template: "+template); 
-									html.find("div[data-view]").each(function(i, v){
-										var view = $(v).attr("data-view"); 
-										if(!view) return; 
-										
-										console.debug("Replacing view "+view+" with {{{view_"+i+"}}}"); 
-										data["view_"+i] = self.server.create_widget(view).render(req);
-										$(v).replaceWith("{{{view_"+i+"}}}"); 
-									}); 
-									self.server.render_raw($(html).html(), data).done(function(html){
-										next(html); 
-									}); 
-								}
-								
-								render_data(forms[page.template], function(html){
-									if(!req.session.user){
-										render_data(html, function(html){
-											self.server.render("root", {
-												title: "",
-												content: html,
-											}).done(function(html){
-												response.data = html; 
-												copyResponse(response); 
-												next(null, session);
-											}); 
-										}); 
-									} else {
-										self.server.render("root", {
-											title: "",
-											content: html,
-										}).done(function(html){
-											response.data = html; 
-											copyResponse(response); 
-											next(null, session);
-										}); 
-									}
-								}); 
-							} else { 
-								self.server.render("root", {
-									title: response.title||"",
-									content: response,
-								}).done(function(html){
-									response.data = html; 
-									copyResponse(response); 
-									next(null, session);
-								}); 
-							} 
-						});
-					}
+							}); 
+						}
+					}); 
 				}
 				
 			}
@@ -894,70 +908,7 @@ SiteBoot.prototype.boot = function(){
 				// add content to web root
 				function(next){
 					vfs.add_index(path+"/content", next); 
-				}, 
-				function(next){
-					for(var key in module.forms) {
-						var name = ((prefix)?(prefix+"_"):"")+key; 
-						forms[name] = module.forms[key]; 
-					}/*
-					for(var key in module.handlers){
-						var name = ((prefix)?(prefix+"_"):"")+key; 
-						handlers[name] = module.handlers[key]; 
-						handlers[name].init(server); 
-						var hr = handlers[name]; 
-						if("pages" in hr) {
-							for(var h in hr.pages){
-								console.debug("Setting page handler for "+hr.pages[h]+" to "+hr.name); 
-								pages[hr.pages[h]] = {
-									handler: hr.name
-								}
-							}
-						}
-					}*/
-					for(var key in module.widgets) {
-						var name = ((prefix)?(prefix+"_"):"")+key; 
-						self.widget_types[name] = module.widgets[key]; 
-						//var x = jquery.extend({}, server); 
-						
-						var x = Object.create(server); 
-						
-						// replace the render method with a widget specific method that takes into account template prefixing TODO
-						x.render = function(template, data){
-							// if already prefixed with plugin name then we just render as normal. 
-							console.debug("Rendering template "+template+" for "+prefix); 
-							if(template.indexOf(prefix) == 0) 
-								return server.render(template, data); 
-							// otherwise prefix it with the plugin name
-							return server.render(((prefix)?(prefix+"_"):"")+template, data); 
-						} 
-						
-						var child = self.widget_types[name]; 
-						if(!child) throw Error("View type not defined!"); 
-						
-						var proto = child.prototype; 
-						
-						child.prototype = Object.create(ServerView.prototype);
-						
-						child.prototype.server = x; 
-						child.prototype.widget_id = name;
-						child.prototype._name = name; 
-						
-						child.prototype.constructor = child; 
-						child.prototype.super = ServerView.prototype;
-						
-						// add in override methods
-						Object.keys(proto).map(function(x){
-							//console.debug("Overriding member "+x+" for widget "+name); 
-							child.prototype[x] = proto[x]; 
-						}); 
-						
-						/*if("init" in widget_types[name]) {
-							widget_types[name].init(x); 
-						}*/
-					}
-					
-					next(); 
-				}, 
+				},  
 				// load objects
 				function(next){
 					if(!fs.existsSync(path+"/objects")){
@@ -1086,6 +1037,77 @@ SiteBoot.prototype.boot = function(){
 							next(); 
 						}); 
 					});
+				},
+				
+				// load all the forms
+				function(next){
+					for(var key in module.forms) {
+						var name = ((prefix)?(prefix+":"):"")+key; 
+						forms[name] = module.forms[key]; 
+					}
+					next(); 
+				},
+				// load all widgets
+				function(next){
+					var widgets = self.server.pool.get("res.widget"); 
+					console.log("Loading all widgets for module "+path); 
+					async.eachSeries(Object.keys(module.widgets), function(key, next){
+						var name = ((prefix)?(prefix+":"):"")+key; 
+						
+						console.debug("Loading widget "+name); 
+						widgets.find({
+							name: name
+						}, {
+							name: name, 
+							type: name, 
+							code: forms[name],
+							parent: null,
+							original_template: forms[name]
+						}).done(function(w){
+							w.original_template = forms[name]; 
+							w.code = forms[name]; 
+							
+							self.widget_types[name] = module.widgets[key]; 
+							var x = Object.create(server); 
+							
+							// replace the render method with a widget specific method that takes into account template prefixing TODO
+							x.render = function(template, data){
+								// if already prefixed with plugin name then we just render as normal. 
+								console.debug("Rendering template "+template+" for "+prefix); 
+								if(template.indexOf(prefix) == 0) 
+									return server.render(template, data); 
+								// otherwise prefix it with the plugin name
+								return server.render(((prefix)?(prefix+":"):"")+template, data); 
+							} 
+							
+							var child = self.widget_types[name]; 
+							if(!child) throw Error("View type not defined!"); 
+							
+							var proto = child.prototype; 
+							
+							child.prototype = Object.create(ServerView.prototype);
+							
+							child.prototype.server = x; 
+							child.prototype.widget_id = name;
+							child.prototype._name = name; 
+							
+							child.prototype.constructor = child; 
+							child.prototype.super = ServerView.prototype;
+							
+							// add in override methods
+							Object.keys(proto).map(function(x){
+								//console.debug("Overriding member "+x+" for widget "+name); 
+								child.prototype[x] = proto[x]; 
+							}); 
+						
+							
+							w.save().done(function(){
+								next(); 
+							}); 
+						}); 
+					}, function(){
+						next();
+					}); 
 				},
 				// load client code
 				function(next){

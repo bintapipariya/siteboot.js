@@ -34,6 +34,7 @@ exports.model = {
 		template: {
 			type: "string"
 		}, 
+		title_template: "string", 
 		widget_ids: {
 			type: "integer",
 			referencesKey: "id",

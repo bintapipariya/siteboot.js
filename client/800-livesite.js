@@ -31,6 +31,25 @@ livesite.init = function(){
 			$(v).addClass("editable-active"); 
 		});
 		
+		$(".editable-property").each(function(i, v){
+			$(v).focusout(
+				function(){
+					var params = {
+						rcpt: $(this).attr("data-rcpt"), 
+						action: "save-property", 
+						object_type: $(this).attr("data-object-type"), 
+						object_id: $(this).attr("data-object-id"), 
+						property_name: $(this).attr("data-property-name"),
+						property_value: $(this).val()
+					}
+					
+					$.post(window.location.path, params, function(data){
+						if(data && data.error)
+							activeEditor.windowManager.alert("Could not save text! Please backup the text, check your connection and try again later!");
+					}); 
+				}
+			);
+		}); 
 		livesite.start_editor("div.editable", function(ed) {
 			var data = {}; 
 			var div = $("#"+ed.id)[0]; 
@@ -65,8 +84,6 @@ livesite.init = function(){
 
 
 livesite.start_editor = function(selector_id, save){
-	
-	
 	// attach mce editor to the selector
 	tinyMCE.init({
 		inline: true,
@@ -122,3 +139,26 @@ $(document).ready(function(){
 		alert("Could not initialize JavaScript on page. "+e+"\nStack trace: \n"+e.stack); 
 	}
 }); 
+
+jQuery(function($) {
+
+  var _oldShow = $.fn.show;
+
+  $.fn.show = function(speed, oldCallback) {
+    return $(this).each(function() {
+      var obj         = $(this),
+          newCallback = function() {
+            if ($.isFunction(oldCallback)) {
+              oldCallback.apply(obj);
+            }
+            obj.trigger('afterShow');
+          };
+
+      // you can trigger a before show if you want
+      obj.trigger('beforeShow');
+
+      // now use the old function to show the element passing the new callback
+      _oldShow.apply(obj, [speed, newCallback]);
+    });
+  }
+});

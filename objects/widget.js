@@ -19,6 +19,10 @@ exports.model = {
 		name: {
 			type: "string",
 			unique: true
-		}
+		}, 
+		type: "string", // widget type (as in js class)
+		code: "text", // widget html 
+		parent: "string", // name of widget that the widget is subclassed from
+		original_template: "string" // path to the original template
 	}
 }
