@@ -223,9 +223,9 @@ var SiteBoot = function(SiteClass, config){
 	
 	this.db = db; 
 	
-	this.security = new SecurityPolicy(this); 
 	
 	this.server = new ServerInterface(this);
+	this.security = new SecurityPolicy(this.server); 
 	this.site = new SiteClass(this.server); 
 }
 

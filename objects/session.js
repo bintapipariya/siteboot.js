@@ -53,7 +53,17 @@ Session.prototype.toJSON = function(){
 }
 
 Session.prototype.reload = function(){
-	return this.super.reload.call(this).then(this.user.reload()); 
+	var ret = this.server.defer(); 
+	this.super.reload.call(this).done(function(){
+		if(this.user){
+			this.user.reload().done(function(){
+				ret.resolve();
+			}); 
+		} else {
+			ret.resolve(); 
+		}
+	}); 
+	return ret.promise;  
 }
 
 exports.model = {
