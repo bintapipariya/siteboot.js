@@ -1,6 +1,12 @@
 
 // livesite globals 
 
+var X = {
+	console: {
+		log: function(){}
+	}
+}; 
+
 var admin = {
 	
 };
@@ -26,9 +32,17 @@ var check = false;
 return check; }
 
 livesite.init = function(){
+	
 	if(session.user_id) {
 		$(".editable").each(function(i, v){
+			var editable = $(v); 
 			$(v).addClass("editable-active"); 
+			
+			/*$(v).focusout(function(){
+				var self = $(this); 
+				$(self).attr("data-active", null); 
+				tinymce.remove("#"+$(self).attr("id")); 
+			}); */
 		});
 		
 		$(".editable-property").each(function(i, v){
@@ -50,41 +64,29 @@ livesite.init = function(){
 				}
 			);
 		}); 
-		livesite.start_editor("div.editable", function(ed) {
-			var data = {}; 
-			var div = $("#"+ed.id)[0]; 
-			//ed.save(); 
-			var val = ed.getContent(); 
-			val = val.replace(/<p>&nbsp;<\/p>\n/gi, ''); 
-			ed.setContent(val); 
-			var params = {
-				rcpt: $(div).attr("data-rcpt"), 
-				action: "save-property", 
-				object_type: $(div).attr("data-object-type"), 
-				object_id: $(div).attr("data-object-id"), 
-				property_name: $(div).attr("data-property-name"),
-				property_value: val
-			}
-			
-			
-			
-			var string = Object.keys(params).map(function(x){return x+"="+encodeURIComponent(params[x])}).reduce(function(a, b){return a+"&"+b;}); 
-				
-			$.post(window.location.path, string, function(data){
-				if(data && data.error)
-					activeEditor.windowManager.alert("Could not save text! Please backup the text, check your connection and try again later!");
-			}); 
-			return false; 
-		}); 
-		
+		/*livesite.start_editor("div.editable", {
+			init: function(ed){
+				$.post(window.location.path, {
+					rcpt: "res.widget",
+					get_code: true, 
+					name: "page.content"
+				}, function(data){
+					ed.setContent(data); 
+				}); 
+			}, 
+			save: save_func
+		}); */
 		InitAnalytics();
 	}
 	
 }
 
 
-livesite.start_editor = function(selector_id, save){
+livesite.start_editor = function(selector_id, opts){
 	// attach mce editor to the selector
+	var save = opts.save; 
+	var init = opts.init; 
+	
 	tinyMCE.init({
 		inline: true,
 		convert_urls: 0,
@@ -107,6 +109,7 @@ livesite.start_editor = function(selector_id, save){
 			alert("Cancel.."); 
 		},
 		save_onsavecallback: save,
+		init_instance_callback : init, 
 		selector: selector_id
 	});
 }
@@ -140,6 +143,7 @@ $(document).ready(function(){
 	}
 }); 
 
+// used by edit dialog modals
 jQuery(function($) {
 
   var _oldShow = $.fn.show;

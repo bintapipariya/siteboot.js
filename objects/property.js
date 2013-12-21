@@ -5,6 +5,7 @@ var Property = function(obj){
 }
 
 
+
 exports.model = {
 	constructor: Property,
 	name: "res.property",

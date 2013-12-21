@@ -15,7 +15,3 @@ exports.module = {
 		]
 	}
 }
-
-exports.init = function(){
-	
-}

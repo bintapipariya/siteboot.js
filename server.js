@@ -47,6 +47,7 @@ var cluster = require("cluster");
 var ServerInterface = require("./lib/server_interface").ServerInterface; 
 var ServerObject = require("./lib/server_object").ServerObject; 
 var ServerView = require("./lib/server_view").ServerView; 
+var SecurityPolicy = require("./lib/security_policy").SecurityPolicy; 
 
 var extname = path.extname; 
 
@@ -85,44 +86,6 @@ var theme = {};
 
 var vfs = require("./modules/vfs"); 
 var loader = require("./modules/loader"); 
-
-/*
-var AsyncEventEmitter = function(){
-	events.EventEmitter.call(this); 
-	//this.orig_emit = this.emit; 
-	this.emitAsync = function(){
-		assert(arguments.length > 1, "AsyncEventEmitter#emit expects at least two arguments!"); 
-		
-		var argv = []; 
-		for(var c = 0; c < arguments.length; c++)
-			argv.push(arguments[c]); 
-		var ev = argv.shift(); 
-		var callback = argv.pop(); 
-		var c = this.listeners(ev).length; 
-		
-		console.debug("Emitting "+ev+" event..."); 
-		if(c == 0){
-			console.debug("Event "+ev+" completed!"); 
-			callback(); 
-			return; 
-		}
-		
-		var args = [ev].concat(argv).concat([function(){
-			c--; 
-			if(c == 0) {
-				console.debug("Event "+ev+" completed!"); 
-				callback(); 
-			}
-		}]); 
-		this.emit.apply(this, args); 
-	}
-}
-
-util.inherits(AsyncEventEmitter, events.EventEmitter); 
-
-util.inherits(ServerInterface, AsyncEventEmitter); 
-*/
-
 
 
 // initialize console output
@@ -186,14 +149,6 @@ exports.shutdown = function(){
 	server.http.close(); 
 }
 
-/*
-function renderWidgets(req, res){
-	var self = this; 
-	if(!self._widgets) return {}; 
-	Object.keys(self._widgets).map(function(x){
-		result[x] = self._widgets.render(req, res)
-}
-*/
 exports.init = function(site, config){
 	return new SiteBoot(site, config); 
 }
@@ -208,10 +163,30 @@ var SiteBoot = function(SiteClass, config){
 	this.cache.mailer_templates = {}; 
 	this.db = {}; 
 	this.vfs = vfs; 
+	this.plugins = plugins; 
 	this.widget_types = {}; 
 	this.widget_types["default"] = ServerView; 
-
+	this.console = {
+		commands: {},
+		exec: function(cmd, args){
+			var ret = Q.defer(); 
+			console.log("(null console): "+cmd+"("+args+") ");
+			if(cmd in this.commands){
+				this.commands[cmd].call(this, args).done(function(data){
+					 ret.resolve(data); 
+				}); 
+			} else {
+				ret.resolve({error: "Command "+cmd+" not found on the server!"}); 
+			}
+			return ret.promise; 
+		}, 
+		registerCommand: function(cmd, method){
+			this.commands[cmd] = method; 
+		}
+	}
+	
 	this.pool = {
+		// get object by name
 		get: function(model){
 			if(model in self.db.objects){
 				return new self.db.objects[model](); 
@@ -247,6 +222,8 @@ var SiteBoot = function(SiteClass, config){
 	db.objects = {}; 
 	
 	this.db = db; 
+	
+	this.security = new SecurityPolicy(this); 
 	
 	this.server = new ServerInterface(this);
 	this.site = new SiteClass(this.server); 
@@ -447,61 +424,23 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 		path: docpath, 
 		args: args,
 		meta: {}, 
+		method: query.method, 
 		session: null,
 		render: function(template, fragments){
 			return self.RenderFragments(template, fragments, this); 
+		}, 
+		command: function(cmd, args){
+			var user = (this.session.user)?this.session.user.username:"(guest)"; 
+			console.log(user+" > "+cmd+" : "+args); 
+			return self.console.exec(cmd, args); 
+		}, 
+		can: function(perm){
+			if(!this.session.user) return false; 
+			return this.session.user.can(perm); 
 		}
 	}
 	
 	try {
-		// Default response handler
-		var renderer = {
-			render: function(req){
-				var res = Q.defer(); 
-				var path = req.path; 
-				
-				var filepath = vfs.resolve("/"+path); 
-				console.debug("Trying to serve ordinary file "+filepath+" ("+path+")..."); 
-				if(!filepath){
-					filepath = self.server.config.site_path+"/"+path; 
-					
-					try {
-						if(!fs.existsSync(filepath) && !fs.lstatSync(filepath).isDirectory()){
-							res.resolve(); 
-							return res.promise;
-						}
-					} catch(e){
-						res.resolve(); 
-						return res.promise;
-					}
-				}
-				console.debug("Serving file "+filepath); 
-				
-				fs.readFile(filepath, "binary", function(err, data){
-					if(err) {
-						res.resolve({
-							code: 404,
-							data: "Not found!"
-						});  
-						return res.promise; 
-					}
-					
-					var headers = {}; 
-					
-					res.resolve({
-						code: 200,
-						headers: {
-							"Content-type": mime_types[extname(path)],
-							"Cache-Control": "public max-age=120"
-						},
-						data: data,
-						type: "binary"
-					});  
-				});
-				return res.promise; 
-			}
-		};
-		
 		// default headers
 		var resp = {
 			headers: {
@@ -509,7 +448,6 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				"Cache-Control": "no-cache"
 			},
 			code: 200,
-			
 			data: "Default data"
 		}
 		
@@ -532,19 +470,31 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 		var page = null; 
 		async.waterfall([
 			function(next){
-				var filepath = self.server.config.site_path+"/"+docpath; 
-				if(fs.existsSync(self.vfs.resolve("/"+docpath))){
-					console.debug("Serving file since it exists: "+docpath);
-					renderer.render(req).done(function(resp){
-						copyResponse(resp); 
-						next("end"); 
-					}); 
-				} else if(fs.existsSync(filepath) && !fs.lstatSync(filepath).isDirectory()){
-					console.debug("Serving file since it exists: "+docpath);
-					renderer.render(req).done(function(resp){
-						copyResponse(resp); 
-						next("end"); 
-					}); 
+				// first try to serve an ordinary static file if it exists
+				var filepath = self.vfs.resolve("/"+docpath); 
+				if(fs.existsSync(filepath)){
+					console.debug("GET STATIC: "+docpath);
+					
+					fs.readFile(filepath, "binary", function(err, data){
+						if(err) {
+							copyResponse({
+								code: 404,
+								data: "Error reading file: "+err
+							});  
+							next("file"); 
+						}
+						
+						copyResponse({
+							code: 200,
+							headers: {
+								"Content-type": mime_types[extname(path)],
+								"Cache-Control": "public max-age=120"
+							},
+							data: data,
+							type: "binary"
+						});  
+						next("file"); 
+					});
 				} else {
 					next(); 
 				}
@@ -558,6 +508,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 						sid: sid, 
 						session: null, 
 						promise: function(){
+							if(this.session) this.session.reload(); 
 							if(!this._promise){
 								this._promise = Q.defer(); 
 								var ret = this._promise; 
@@ -581,12 +532,29 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 					}
 				} 
 				self.cache.sessions[sid].promise().done(function(session){
-					req.session = session; 
-					next(); 
+					session.reload().done(function(){
+						req.session = session; 
+						// set up session locale
+						var i = Object.create(i18n); 
+						var lang = req.language = req.session.language = (req.args["lang"]||req.session.language||"en"); 
+						
+						i.configure({
+							locales: ["en", "se"],
+							directory: self.config.site_path+"/lang",
+							defaultLocale: lang
+						}); 
+						req.__ = i.__; 
+						
+						console.debug("Setting session sid cookie: "+session.sid); 
+						resp.headers["Set-Cookie"] = "session="+session.sid+"; path=/"; 
+					
+						next(); 
+					}); 
 				}); 
 			}, 
 			function(next){
-				if(req.path == "scripts"){
+				// time to serve some files
+				if("fx-get-client-scripts" in req.args){
 					copyResponse({
 						headers: {
 							"Content-type": "text/javascript"
@@ -595,7 +563,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 					}); 
 					next("end"); 
 					return; 
-				} else if(req.path == "styles"){
+				} else if("fx-get-client-styles" in req.args){
 					copyResponse({
 						headers:  {
 							"Content-type": "text/css"
@@ -606,150 +574,115 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 					return; 
 				}
 				
-				// set up session locale
-				var i = Object.create(i18n); 
-				var lang = req.language = req.session.language = (req.args["lang"]||req.session.language||"en"); 
-				
-				i.configure({
-					locales: ["en", "se"],
-					directory: self.config.site_path+"/lang",
-					defaultLocale: lang
-				}); 
-				req.__ = i.__; 
-				
-				// redirect all pages to login if we are not logged in
-				console.debug("Session user: "+req.session.user); 
-				
-				
+				// get the page for current url because it's either a post or a get request
 				var pages = self.pool.get("res.page"); 
-				console.debug("Looking up page "+req.path+" language: "+lang); 
+				console.debug("Looking up page "+req.path+" language: "+req.language); 
 				pages.find({
 					path: req.path||"home",
-					language: req.session.language
+					language: req.language
 				}).done(function(p){
 					if(!p){
 						console.debug("No page found for path "+docpath+"..."); 
+						copyResponse({
+							code: 404,
+							data: "Not found!"
+						}); 
+						next("page"); 
 					} else {
 						page = p; 
+						next(); 
 					}
-					next(); 
 				}); 
 			}, 
 			function(next){
 				var session = req.session; 
 				
-				console.debug("Parsing post data..."); 
-				console.debug("Setting session sid cookie: "+session.sid); 
-				resp.headers["Set-Cookie"] = "session="+session.sid+"; path=/"; 
+				if(request.method != "POST"){
+					next(); 
+					return; 
+				}
 				
 				var form = new formidable.IncomingForm();
 				form.parse(request, function(err, fields, files) {
-					if(request.method != "POST"){
-						next(); 
-						return; 
-					}
-					
 					req.args["files"] = files; 
 					
-					console.log("POST: "+docpath+" args: "+JSON.stringify(fields)); 
-					console.debug("FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
+					console.debug("POST FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
 					
-					Object.keys(fields).map(function(k){args[k] = fields[k]; });
-					
-					var rcpt = args["rcpt"]; 
-					if(rcpt && rcpt in plugins && "post" in plugins[rcpt]){
-						console.debug("Passing post data to plugin "+rcpt); 
-						plugins[rcpt].post(req).done(function(response){
-							copyResponse(response); 
-							next(null, session); 
-						}); 
-					} else if(rcpt && rcpt in self.widget_types && "post" in self.widget_types[rcpt].prototype){
-						console.debug("Passing post data to widget type "+rcpt);
-						//var objs = self.server.pool.get(args["object_type"]||self.widget_types[rcpt].model||"res.widget"); 
-						var objs = self.server.pool.get("res.widget"); 
-						
-						function do_post(obj){
-							var w = self.CreateWidget(rcpt, obj); 
-							w.post(req).done(function(response){
-								console.debug("Post callback completed: "+JSON.stringify(response));  
-								copyResponse(response); 
-								next("ajax", session); 
-							}); 
-						}
-						
-						if(args["object_id"]){
-							objs.find({id: args["object_id"]}).done(do_post); 
+					self.security.isAllowed(req).done(function(allowed){
+						if(!allowed){
+							console.log("ACCESS DENIED: "+docpath); 
+							next("error"); 
+							return; 
 						} else {
-							do_post({}); 
+						
+							Object.keys(fields).map(function(k){args[k] = fields[k]; });
+							
+							var rcpt = args["rcpt"]; 
+							if(rcpt && rcpt in self.widget_types && "post" in self.widget_types[rcpt].prototype){
+								console.debug("Passing post data to widget type "+rcpt);
+								
+								var objs = self.server.pool.get("res.widget"); 
+								objs.find({name: args["object_id"]}).done(function(obj){
+									var w = self.CreateWidget(rcpt, obj); 
+									w.post(req).done(function(response){
+										console.debug("Post callback completed: "+JSON.stringify(response));  
+										copyResponse(response); 
+										next("ajax", session); 
+									}); 
+								}); 
+							} /*else if(rcpt && rcpt in plugins && "post" in plugins[rcpt]){
+								console.debug("Passing post data to plugin "+rcpt); 
+								plugins[rcpt].post(req).done(function(response){
+									copyResponse(response); 
+									next(null, session); 
+								}); 
+							} else if("post" in site){
+								site.post(req).done(function(response){
+									copyResponse(response); 
+									next();
+								}); 
+							} */
+							else {
+								var w = self.CreateWidget(page.template, page); 
+								w.post(req).done(function(response){
+									copyResponse(response); 
+									next("ajax", session); 
+								}); 
+							}
 						}
-					} else if("post" in site){
-						site.post(req).done(function(response){
-							copyResponse(response); 
-							next();
-						}); 
-					} else {
-						next(); 
-					}
+					}); 
 				}); 
 			},  
 			function(next){
 				var session = req.session; 
 				
-				console.debug("Rendering site..."); 
 				console.log("GET: "+docpath); 
 				
-				var rcpt = args["rcpt"]; 
-				args = query.query; 
+				req.args = query.query; 
 				
-				function not_found(next){
-					copyResponse({
-						code: 404,
-						data: "Not found!"
-					}); 
-					next(); 
-				}
-				
-				// files are always served regardless
-				if(rcpt && rcpt in plugins && "render" in plugins[rcpt]){
-					console.debug("Passing GET data to plugin "+rcpt); 
-					plugins[rcpt].render(req).done(function(response){
-						copyResponse(response); 
-						next(null, session); 
-					}); 
-				} else if(rcpt && rcpt in widgets && "render" in widgets[rcpt]){
-					console.debug("Passing GET data to widget: "+JSON.stringify(args)); 
-					widgets[rcpt].render(req).done(function(response){
-						copyResponse(response); 
-						next(null, session); 
-					}); 
-				} else {
-					console.debug("Rendering ordinary page "+JSON.stringify(req)); 
-					var pages = self.server.pool.get("res.page"); 
-					pages.find({
-						path: req.path||"home",
-						language: req.session.language
-					}).done(function(page){
-						if(!page){
-							not_found(next); 
-							return; 
-						} else {
-							self.RenderWidget(page.template, req).done(function(result){
-								var title = mustache.render(page.title_template, req.meta); 
-								req.render("root", {
-									title: title,
-									content: result.html,
-								}).done(function(html){
-									copyResponse(html); 
-									next(null, session);
-								});
-							}); 
-						}
-					}); 
-				}
+				self.security.isAllowed(req).done(function(allowed){
+					if(!allowed){
+						console.log("ACCESS DENIED: "+docpath); 
+						next("error"); 
+						return; 
+					} else {
+						self.RenderWidget(page.template, req).done(function(result){
+							var title = mustache.render(page.title_template, req.meta); 
+							req.render("root", {
+								title: title,
+								console: (req.can("admin"))?"[[console]]":"", 
+								content: result.html,
+							}).done(function(html){
+								copyResponse(html); 
+								next();
+							});
+						}); 
+					}
+				}); 
 				
 			}
 		], function(err){
-			console.debug("Passing headers to browser: "+JSON.stringify(resp.headers)); 
+			//console.debug("Writing response to client: "+JSON.stringify(resp.headers)); 
 			
 			// save the session
 			if(req.session)
@@ -765,7 +698,6 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 			}
 			self.inprogress = false; 
 		}); 
-		
 	} catch(e) { // prevent server crash
 		console.debug("FATAL ERROR WHEN SERVING CLIENT "+path+": "+e+"\n"+e.stack); 
 		res.writeHead(200, {}); 
@@ -964,46 +896,42 @@ SiteBoot.prototype.boot = function(){
 							console.debug(Object.keys(model.fields)); 
 							
 							self.registerObjectFields(model.tableName, model.fields).done(function(def){
-								var child = model.constructor; 
+								var child = model.constructor; // Child type as function Child(){}
 								if(!child) 
 									throw Error("Model must contain a constructor property!"); 
 								if(!def) 
 									throw Error("There was an error in your definition!"); 
-									
+								
 								var proto = child.prototype; 
 								
+								// replace prototype with base class 	
 								if(model.name in self.db.objects){
 									console.debug("DDDDD overriding object "+model.name); 
-									child.prototype = Object.create(self.db.objects[model.name].prototype); 
-									child.prototype.super = self.db.objects[model.name].prototype; 
+									self.server.extend(child, self.db.objects[model.name]); 
+									//child.prototype = new self.db.objects[model.name](); 
+									//child.prototype.super = self.db.objects[model.name].prototype; 
 								} else {
-									child.prototype = Object.create(ServerObject.prototype);
-									child.prototype.super = ServerObject.prototype;
+									self.server.extend(child, ServerObject); 
+									//child.prototype = new ServerObject(); 
+									//child.prototype.super = ServerObject.prototype;
 								}
 								
 								child.prototype._table = def; 
 								child.prototype._object_name = model.name; 
 								child.prototype.server = self.server; 
-								child.prototype.constructor = child; 
-								
-								// add in override methods
-								Object.keys(proto).map(function(x){
-									child.prototype[x] = proto[x]; 
-								}); 
-								
-								var obj = self.db.objects[model.name] = child; 
+								//child.prototype.constructor = child; 
 								
 								// define object getters and setters for each field
 								Object.keys(model.fields).map(function(f){
 									//console.debug("Defining getter for field "+f+" of "+model.name); 
-									obj.prototype.__defineGetter__(f, function(){
+									child.prototype.__defineGetter__(f, function(){
 										//if(this._write && (f in this._write))
 										//	return this._write[f]; 
 										if(this._object) 
 											return this._object[f]; 
 										return null; 
 									});
-									obj.prototype.__defineSetter__(f, function(v){
+									child.prototype.__defineSetter__(f, function(v){
 										//if(!this._write) this._write = {}; 
 										this._write[f] = true; 
 										if(this._object)
@@ -1011,8 +939,8 @@ SiteBoot.prototype.boot = function(){
 									});
 								}); 
 								
-								//server.db.objects[model.tableName][model.name] = model.constructor; 
-									
+								self.db.objects[model.name] = child; 
+								
 								def.sync().success(function(){
 									if(model.index && self.config.update){
 										self.db.getQueryInterface().removeIndex(def.tableName, def.tableName+"_main_index").success(function(){
@@ -1083,23 +1011,11 @@ SiteBoot.prototype.boot = function(){
 							var child = self.widget_types[name]; 
 							if(!child) throw Error("View type not defined!"); 
 							
-							var proto = child.prototype; 
-							
-							child.prototype = Object.create(ServerView.prototype);
+							self.server.extend(child, ServerView); 
 							
 							child.prototype.server = x; 
 							child.prototype.widget_id = name;
 							child.prototype._name = name; 
-							
-							child.prototype.constructor = child; 
-							child.prototype.super = ServerView.prototype;
-							
-							// add in override methods
-							Object.keys(proto).map(function(x){
-								//console.debug("Overriding member "+x+" for widget "+name); 
-								child.prototype[x] = proto[x]; 
-							}); 
-						
 							
 							w.save().done(function(){
 								next(); 
@@ -1176,8 +1092,22 @@ SiteBoot.prototype.boot = function(){
 				}
 			], function(){
 				console.debug("Loaded module from path "+path); 
-				if("init" in module) module.init(server); 
-				cb(module); 
+				module.server = self.server; 
+				
+				if("init" in module) {
+					var t = setTimeout(function(){
+						console.error("Module initialization timed out for "+path); 
+						cb(module); 
+					}, 5000); 
+					
+					
+					module.init(server).done(function(){
+						clearTimeout(t); 
+						cb(module); 
+					}); 
+				} else {
+					cb(module);
+				}
 			}); 
 		});
 	}

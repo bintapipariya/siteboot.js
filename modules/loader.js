@@ -44,6 +44,11 @@ function LoadScripts(dir, callback){
 	});
 }
 
+function basename(url){
+    return ((url=/(([^\/\\\.#\? ]+)(\.\w+)*)([?#].+)?$/.exec(url))!= null)? url[2]: '';
+}
+
+
 function LoadForms(basedir, callback){
 	var walker = walk.walk(basedir); 
 	var forms = {}; 
@@ -72,18 +77,25 @@ exports.LoadModule = function(path, callback){
 	var module = {}; 
 	if(fs.existsSync(path+"/init.js"))
 		module = require(path+"/init"); 
-		
-	if(!("init" in module)){
-		console.debug("Warning: no init in module "+path); 
-	} 
+	
+	var object = module; 	
+	if("plugin" in module){
+		object = new module.plugin.object();
+		module = module.plugin; 
+	}
+	
+	object.name = basename(path); 
+	object.title = module.name; 
+	object.description = module.description; 
+	
 	async.series([
 		function(callback){
 			console.debug("Loading html forms from "+path+"/html"); 
 			LoadForms(path+"/html", function(results){
-				module.forms = {}; 
+				object.forms = {}; 
 				for(var key in results){
 					console.debug("Found form "+key); 
-					module.forms[key] = results[key]; 
+					object.forms[key] = results[key]; 
 				}
 				callback(); 
 			}); 
@@ -91,10 +103,10 @@ exports.LoadModule = function(path, callback){
 		function(callback){
 			console.log("Loading handlers from "+path+"/handlers");
 			LoadScripts(path+"/handlers", function(scripts){
-				module.handlers = {}; 
+				object.handlers = {}; 
 				for(var key in scripts){
 					//hr.init(server);
-					module.handlers[key] = scripts[key]; 
+					object.handlers[key] = scripts[key]; 
 				}
 				callback(); 
 			});
@@ -102,10 +114,10 @@ exports.LoadModule = function(path, callback){
 		function(callback){
 			console.log("Loading widgets from "+path+"/widgets");
 			LoadScripts(path+"/widgets", function(scripts){
-				module.widgets = {}; 
+				object.widgets = {}; 
 				for(var key in scripts){
 					if(scripts[key] && scripts[key].type)
-						module.widgets[key] = scripts[key].type;
+						object.widgets[key] = scripts[key].type;
 					else
 						console.error("Widget "+key+" does not have correct 'type' member exported from the module!"); 
 				}
@@ -113,6 +125,6 @@ exports.LoadModule = function(path, callback){
 			});
 		},
 	], function(){
-		callback(module); 
+		callback(object); 
 	});
 }

@@ -46,6 +46,16 @@ Session.prototype.browse = function(ids){
 	return ret.promise; 
 }
 
+Session.prototype.toJSON = function(){
+	var obj = this.super.toJSON.call(this); 
+	obj.user = this.user; 
+	return obj; 
+}
+
+Session.prototype.reload = function(){
+	return this.super.reload.call(this).then(this.user.reload()); 
+}
+
 exports.model = {
 	constructor: Session,
 	name: "res.session",

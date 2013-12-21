@@ -3,30 +3,24 @@ var crypto = require("crypto");
 
 function User(obj){
 	this._object = obj; 
+	this.permissions = {}; 
 	return this.super.constructor.call(this); 
 }
 
-User.prototype.create = function(opts){
-	// enforce unique users based on username
-	var r = Q.defer(); 
-	var self = this; 
-	
-	this.search({username: opts.username}).done(function(ids){
-		if(ids.length){
-			console.error("User by the name of "+opts.username+" already exists!"); 
-			r.reject("User by the name of "+opts.username+" already exists!"); 
-		} else {
-			self.super.create.call(self, opts).done(function(obj){
-				r.resolve(obj); 
-			}); 
-		}
-	}); 
-	return r.promise; 
-}
 
 User.prototype.register = function(opts){
 	console.debug("Registering new user "+opts.username); 
-	return this.create(opts);
+	var r = this.server.defer(); 
+	this.create(opts).done(function(user){
+		if(!user){
+			console.error("User by the name of "+opts.username+" already exists!"); 
+			r.reject("User by the name of "+opts.username+" already exists!"); 
+		} else {
+			console.log("Created new user "+opts.username); 
+			r.resolve(user); 
+		}
+	}); 
+	return r.promise; 
 }
 
 User.prototype.login = function(opts){
@@ -68,6 +62,15 @@ User.prototype.logout = function(){
 	return ret.promise; 
 }
 
+User.prototype.can = function(perm){
+	if(!perm) return false; 
+	var perms = {}; 
+	this.caps.split(",").map(function(y){
+		perms[y] = true; 
+	}); 
+	return perm in perms; 
+}
+
 exports.model = {
 	constructor: User,
 	name: "res.user",
@@ -100,6 +103,7 @@ exports.model = {
 		},
 		phone: "string", 
 		hash: "string",
+		caps: "string", 
 		role: "string"
 	},
 	index: ["username"]
