@@ -4,7 +4,7 @@
   },
   "name": "siteboot",
   "description": "SiteBoot - node js web development framework",
-  "version": "0.2.0beta",
+  "version": "0.4.0alpha",
   "repository": {
     "url": "https://github.com/mkschreder/siteboot.js.git"
   },
