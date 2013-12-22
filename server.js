@@ -166,6 +166,18 @@ var SiteBoot = function(SiteClass, config){
 	this.plugins = plugins; 
 	this.widget_types = {}; 
 	this.widget_types["default"] = ServerView; 
+	this.filter = {
+		filters: [], 
+		add: function(filter, replace){
+			this.filters.push({filter: filter, replace: replace}); 
+		}, 
+		apply: function(str){
+			this.filters.map(function(x){
+				str = str.replace(x.filter, x.replace); 
+			}); 
+			return str.toString(); 
+		}
+	}; 
 	this.console = {
 		commands: {},
 		exec: function(cmd, args){
@@ -411,10 +423,9 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 	self.inprogress = true; 
 	*/
 	var cookies = parseCookieString(request.headers.cookie); 
-
+	
 	var query = url.parse(request.url, true);
 	var docpath = query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/");
-	var splitpath = docpath.split("/"); 
 	var site = this.site; 
 	
 	var args = {}
@@ -553,6 +564,7 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 				}); 
 			}, 
 			function(next){
+				
 				// time to serve some files
 				if("fx-get-client-scripts" in req.args){
 					copyResponse({
@@ -573,6 +585,14 @@ SiteBoot.prototype.ClientRequest = function(request, res){
 					next("end"); 
 					return; 
 				}
+				/*
+				// reparse the url now with url rewriting filters
+				query = url.parse(self.server.filter.apply(request.url), true);
+				docpath = query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/");
+				req.path = docpath; 
+				req.args = {}; 
+				Object.keys(query.query).map(function(k){req.args[k] = query.query[k];}); 
+				*/
 				
 				// get the page for current url because it's either a post or a get request
 				var pages = self.pool.get("res.page"); 
