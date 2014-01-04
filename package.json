@@ -8,7 +8,7 @@
   "repository": {
     "url": "https://github.com/mkschreder/siteboot.js.git"
   },
-  "main": "./server.js",
+  "main": "./siteboot.js",
   "bin": {},
   "dependencies": {
     "http-server": "*",

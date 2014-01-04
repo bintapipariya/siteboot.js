@@ -17,6 +17,43 @@ var ServerInterface = function(siteboot){
 	this.filter = siteboot.filter; 
 	this.console = siteboot.console; 
 	this.plugins = siteboot.plugins; 
+	this.route = {
+		_routes: {}, 
+		add: function(path, template){
+			var self = this; 
+			self._routes[path] = template; 
+		}, 
+		resolve: function(path){
+			var self = this; 
+			var result = null; 
+			for(var key in Object.keys(self._routes)){
+				key = Object.keys(self._routes)[key]; 
+				var groups = []; 
+				var args = {}; 
+				var rx = key.replace(/\:(\w+)/g, function(match, name){
+					groups.push(name); 
+					return "([^/]+)"; 
+				}); 
+				//rx = rx.replace(/\//g, "\\/"); 
+				console.log("Resolve route: "+path+", will use regex: "+rx+": "+path.search(rx)+": "+groups); 
+				rx = new RegExp(rx, "g"); 
+				var matches = rx.exec(path); 
+				if(matches){
+					console.log("Matches: "+JSON.stringify(matches)); 
+					var params = {}; 
+					var pc = 1; 
+					groups.map(function(x){params[x] = matches[pc++];}); 
+					result = {
+						path: path, 
+						params: params,
+						destination: self._routes[key]
+					}
+					break; 
+				}
+			};
+			return result; 
+		}
+	}
 }
 
 ServerInterface.prototype.q = Q; 
@@ -115,7 +152,6 @@ ServerInterface.prototype.render_raw = function(template, fragments, context){
 ServerInterface.prototype.defer = function(){
 	return Q.defer(); 
 }
-
 
 ServerInterface.prototype.create_widget = function(c, object){
 	return this.siteboot.CreateWidget(c, object); 

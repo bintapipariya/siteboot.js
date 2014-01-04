@@ -1,6 +1,6 @@
 var JSON = require("JSON"); 
 var crypto = require("crypto"); 
-
+/*
 var Widget = function(x, object){
 	this.server = x; 
 	this.object = object;  
@@ -38,3 +38,4 @@ exports.module = {
 	type: Widget, 
 	model: "res.widget"
 }
+*/

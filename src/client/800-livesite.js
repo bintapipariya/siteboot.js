@@ -11,6 +11,23 @@ var admin = {
 	
 };
 
+var server = {
+	
+}
+
+server.exec = function(command, args){
+	var ret = $.Deferred(); 
+	
+	$.post("/", {
+		command: command, 
+		args: JSON.stringify(args)
+	}, function(data){
+		ret.resolve(data); 
+	}); 
+	
+	return ret.promise(); 
+}
+
 var livesite_session; 
 
 if(livesite_session == null){
