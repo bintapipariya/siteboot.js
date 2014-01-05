@@ -19,3 +19,20 @@ Server.registerWidget({
 	name: "console", 
 	html: fs.readFileSync(__dirname+"/html/console.html")
 }); 
+
+
+$.fn.dropdown_console = function(){
+	var html = null; 
+	return this.each(function(){
+		console.log("Creating console.."); 
+		$(this).html(fs.readFileSync(__dirname+"/html/console.html")+""); 
+		console.log($(this).html()); 
+		this.load = function(req){
+			var ret = $.Deferred(); 
+			//$(this).html(html); 
+			ret.resolve(); 
+			return ret.promise(); 
+		}
+	}); 
+}
+

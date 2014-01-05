@@ -1,14 +1,6 @@
 
-var Property = function(obj){
-	this._object = obj; 
-	return this.super.constructor.call(this); 
-}
-
-
-
-exports.model = {
-	constructor: Property,
-	name: "res.property",
+Server.registerObject({
+	name: "res_property",
 	fields: {
 		id: {
 			type: "integer",
@@ -22,4 +14,4 @@ exports.model = {
 		language: "string"
 	}, 
 	index: ["object_type", "object_id", "name", "language"]
-}
+}); 

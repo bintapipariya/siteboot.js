@@ -15,7 +15,7 @@ Server(function(){
 		var props = self.server.object("res_property"); 
 		
 		// prevent infinite loop of getting properties of properties
-		/*if(props._object_name === this._object_name) {
+		if(props._object_name === this._object_name) {
 			ret.resolve(); 
 			return ret.promise; 
 		}
@@ -34,8 +34,7 @@ Server(function(){
 				}); 
 				ret.resolve(); 
 			}); 
-		}); */
-		ret.resolve(); 
+		}); 
 		
 		return ret.promise; 
 	}
@@ -170,7 +169,7 @@ Server(function(){
 			where = null; 
 		
 		function done(objs){
-			//console.debug("Found "+objs.length+" objects.."); 
+			console.debug("Found "+objs.length+" objects.."); 
 			var list = []; 
 			async.forEachSeries(objs, function(x, next){
 				var obj = self._create(self._object_name, x); 

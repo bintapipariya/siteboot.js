@@ -19,7 +19,7 @@ $(document).ready(function(){
 	
 	if($('.siteboot-terminal').length){
 		var term = $('.siteboot-terminal').terminal(function(command, term){
-			var cr = /^\s*([a-zA-Z0-9_]+)(.*?)$/; 
+			var cr = /^\s*([a-zA-Z0-9_-]+)(.*?)$/; 
 			var ar = /(["][^"]*["]|[^\s]*)/gi; 
 			var cm = cr.exec(command); 
 			var args = []; 
@@ -47,19 +47,16 @@ $(document).ready(function(){
 					args: args
 				}, function(data){
 					term.resume(); 
+					
 					if(!data){
 						term.error("Could not communicate with server!"); 
 						return; 
 					}
-					try {
-						data = JSON.parse(data); 
-						if(data.error){
-							term.error(data.error); 
-						} else if(data.success){
-							term.echo(data.success); 
-						}
-					} catch(e){
-						term.error("Could not parse JSON!"); 
+					
+					if(data.error){
+						term.error(data.error); 
+					} else if(data.success){
+						term.echo(data.success); 
 					}
 				}); 
 				

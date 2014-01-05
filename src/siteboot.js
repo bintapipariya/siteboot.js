@@ -43,6 +43,7 @@ var jquery = require("jquery");
 var i18n = require("i18n"); 
 var $ = require("jquery"); 
 var jsdom = require("jsdom"); 
+var Path = require("path"); 
 
 var cluster = require("cluster");
 
@@ -76,8 +77,14 @@ var Server = function(){
 	this.defer = Q.defer; 
 	this.client_code = ""; 
 	this.client_style = ""; 
-	this._routes = {}; 
-	
+	this._middleware = []; 
+}
+
+util.inherits(Server, events.EventEmitter); 
+
+Server.prototype.use = function(middleware){
+	if(!middleware) throw new Error("Empty argument supplied to Server::use()"); 
+	this._middleware.push(middleware.call(this)); 
 }
 
 var ServerObject = function(x){
@@ -91,10 +98,17 @@ var Widget = function(x, obj){
 	this.object = obj; 
 }
 
-util.inherits(Server, events.EventEmitter); 
 
 Server.prototype.ready = function(cb){
 	this.on("ready", cb); 
+}
+
+var Client = function(code){
+	if(!Client.client_code) Client.client_code = ""; 
+	if((typeof code) == "function"){
+		Client.client_code += 
+			"$(document).ready("+code.toString()+");\n";
+	}
 }
 
 // initialize console output
@@ -272,7 +286,7 @@ Server.registerPage = function(opts){
 
 Server.prototype.registerClientScript = function(path){
 	if(fs.existsSync(path)){
-		this.client_code += fs.readFileSync(path); 
+		Client.client_code = fs.readFileSync(path).toString() + Client.client_code; 
 	}
 }
 
@@ -282,23 +296,21 @@ Server.prototype.registerStyle = function(path){
 	}
 }
 
-Server.prototype.registerCommand = function(command, func){
-	if(!command || !func) throw Error("Must supply command and func argument!"); 
-	Server._commands[command] = func; 
-}
-
-Server.prototype.runCommand = function(command, args){
-	if(command in Server._commands){
-		return Server._commands[command].apply(this, args); 
+Server.registerCommand = function(command, func){
+	var type = Object.prototype.toString.call(command); 
+	if(type == "[object String]"){
+		if(!command || !func) throw Error("Must supply command and func argument!"); 
+	
+		Server._commands[command] = {
+			name: command, 
+			method: func
+		}
+	} else if(type == "[object Object]"){
+		if(!command.name || !command.method) throw Error("Must specify name and method when registering a command!"); 
+		Server._commands[command.name] = command; 
 	}
-	var r = this.defer(); 
-	r.resolve(); 
-	return r.promise; 
 }
 
-Server.prototype.route = function(path, func){
-	this._routes[path] = func; 
-}
 
 Server.prototype.object = function(name){
 	var i = new ServerObject(); 
@@ -334,64 +346,13 @@ Server.prototype.object = function(name){
 	
 	if(name in i && (typeof i[name]) == "function")
 		i[name](); 
+	
 	return i; 
-}
-
-Server.prototype.widget = function(name){
-	var i = new Widget(); 
-	i.server = this; 
-	
-	i._model = Server._widgets[name]||{}; 
-	i.html = i._model.html+""; 
-	i.client = i._model.client+""; 
-	
-	i.html = $("<html>"+i.html+"</html>");
-	
-	if(name in i && (typeof i[name]) == "function")
-		i[name](); 
-	return i; 
-}
-
-function setSessionTimeout(session){
-	if("timeout" in session)
-		clearTimeout(session.timeout); 
-	session.timeout = setTimeout(function(){
-		console.debug("Removing session object for "+session.sid); 
-		server.emitAsync("session_destroy", session, function(){
-			session.object.destroy(); 
-			delete cache.sessions[session.sid];
-		}); 
-	}, 60000*(config.session_ttl||20)); 
-}; 
-
-Server.prototype.CreateWidget = function(view, object){
-	var self = this; 
-	var widget_types = this.widget_types; 
-	var x = this.server; 
-	
-	if(!(view in widget_types)){
-		console.debug("Widget type "+view+" does not exist!"); 
-		return new widget_types["default"](x); 
-	}
-
-	var widget = new widget_types[view](x, object); 
-	if(!widget) return new widgets_types["default"](x); 
-	
-	widget.name = view; 
-	widget.object = object; 
-	widget._object = object; 
-	
-	if("init" in widget)
-		widget.init(server); 
-	
-	console.debug("Created widget "+view); 
-	
-	return widget; 
 }
 
 Server.prototype.ClientRequest = function(request, res){
 	var self = this; 
-			
+	
 	function parseCookieString(str){
 		var cookies = {}; 
 		str && str.split(';').forEach(function( cookie ) {
@@ -401,330 +362,53 @@ Server.prototype.ClientRequest = function(request, res){
 		return cookies; 
 	}
 
-	var cookies = parseCookieString(request.headers.cookie); 
-	
 	var query = url.parse(request.url, true);
-	var docpath = "/"+query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/");
-	
-	
+		
 	var req = {
-		path: docpath, 
-		args: {},
+		path: "/"+query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/"), 
+		args: query.query,
 		meta: {}, 
 		method: query.method, 
-		session: null,
+		cookies: parseCookieString(request.headers.cookie),
+		server: this, 
+		_request: request, 
 		render: function(template, fragments){
 			return self.RenderFragments(template, fragments, this); 
 		}, 
-		command: function(cmd, args){
-			var user = (this.session.user)?this.session.user.username:"(guest)"; 
-			console.log(user+" > "+cmd+" : "+args); 
-			return self.console.exec(cmd, args); 
-		}, 
+		
 		can: function(perm){
 			if(!this.session.user) return false; 
 			return this.session.user.can(perm); 
 		},
-		document: $("<html></html>")
-	}
-	
-	Object.keys(query.query).map(function(k){req.args[k] = query.query[k];}); 
-	
-	try {
-		// default headers
-		var resp = {
-			headers: {
-				"Content-type": "text/html",
-				"Cache-Control": "no-cache"
-			},
-			code: 200,
-			data: "Default data"
-		}
-		
-		function copyResponse(response){
-			if(!response) return; 
-			if(typeof(response) === "object"){
-				Object.keys(response.headers||{}).map(function(x){
-					resp.headers[x] = response.headers[x]; 
-				}); 
-				resp.code = response.code || resp.code; 
-				resp.data = response.data || resp.data; 
-				resp.type = response.type || resp.type; 
-				if("Location" in resp.headers)
-					resp.code = 301
+		document: null, 
+		readFileSync: function(name){
+			var file = self.vfs.resolve(name); 
+			console.debug("Trying to load request specific file: "+name+" ("+file+")"); 
+			if(fs.existsSync(file)){
+				return fs.readFileSync(file).toString(); 
 			} else {
-				resp.data = response; 
+				return null; 
 			}
 		}
-			
-		var page = null; 
-		async.waterfall([
-			function(next){
-				var mime_types = {
-					'.html': "text/html",
-					'.css':  "text/css",
-					'.js':   "text/javascript",
-					'.jpg': "image/jpeg",
-					'.jpeg': "image/jpeg",
-					'.png': "image/png"
-				};
-				// first try to serve an ordinary static file if it exists
-				var filepath = self.vfs.resolve(req.path); 
-				if(fs.existsSync(filepath)){
-					console.debug("GET STATIC: "+docpath);
-					
-					fs.readFile(filepath, "binary", function(err, data){
-						if(err) {
-							res.writeHead(404, {}); 
-							res.write("Requested file not found!"); 
-							res.end(); 
-						} else {
-							res.writeHead(200, {
-								"Content-type": mime_types[extname(path)],
-								"Cache-Control": "public max-age=120"
-							}); 
-							res.write(data, "binary"); 
-							res.end(); 
-						}
-					});
+	}
+	
+	async.eachSeries(this._middleware, 
+		function(func, next){
+			func.call(self, req, res, function(done){
+				if(!done){
+					next(); 
 				} else {
-					next(); 
-				}
-			}, 
-			function(next){
-				var sid = cookies["session"]; 
-				console.debug("Looking up session: "+sid); 
-				// the perfect solution for multiple simultaneous requests coming in at the same time for the same session. 
-				if(!self.cache.sessions[sid]){
-					self.cache.sessions[sid] = {
-						sid: sid, 
-						session: null, 
-						promise: function(){
-							if(this.session) this.session.reload(); 
-							if(!this._promise){
-								this._promise = Q.defer(); 
-								var ret = this._promise; 
-								var sessions = self.object("res_session"); 
-								if(!sessions){
-									console.error("Sessions not supported!"); 
-									ret.resolve(); 
-									return ret.promise; 
-								}
-								sessions.find({sid: this.sid}).done(function(session){
-									if(!session){
-										sessions.create({language: "en"}).done(function(session){
-											console.debug("Created new session in database with sid: "+session.sid);
-											ret.resolve(session); 
-										}); 
-									} else {
-										console.debug("Loaded existing session: "+session.sid);
-										ret.resolve(session); 
-									}
-								}); 
-								return ret.promise; 
-							} else {
-								return this._promise.promise; 
-							}
-						}
-					}
-				} 
-				self.cache.sessions[sid].promise().done(function(session){
-					if(!session){
-						//req.session = self.cache.sessions[sid].session; 
-						console.error("Could not get session from database!"); 
-						next(); 
-						return; 
-					}
-					session.reload().done(function(){
-						req.session = session; 
-						// set up session locale
-						var i = Object.create(i18n); 
-						var lang = req.language = req.session.language = (req.args["lang"]||req.session.language||"en"); 
-						
-						i.configure({
-							locales: ["en", "se"],
-							directory: self.config.site_path+"/lang",
-							defaultLocale: lang
-						}); 
-						req.__ = i.__; 
-						
-						console.debug("Setting session sid cookie: "+session.sid); 
-						resp.headers["Set-Cookie"] = "session="+session.sid+"; path=/"; 
-					
-						next(); 
-					}); 
-				}); 
-			}, 
-			function(next){
-				if(request.method != "PUT"){
-					next(); 
-					return; 
-				}
-				
-				console.debug("PUT: "+request.body); 
-				request.on('data', function(chunk) {
-					console.log("Received body data:");
-					console.log(chunk.toString());
-				});
-				request.on('end', function() {
-					next("end"); 
-				});
-			}, 
-			function(next){
-				
-				// time to serve some files
-				if("fx-get-client-scripts" in req.args){
-					copyResponse({
-						headers: {
-							"Content-type": "text/javascript"
-						}, 
-						data: "var session = "+JSON.stringify(req.session||{})+"; \n"+self.client_code
-					}); 
-					next("end"); 
-					return; 
-				} else if("fx-get-client-styles" in req.args){
-					copyResponse({
-						headers:  {
-							"Content-type": "text/css"
-						}, 
-						data: self.client_style
-					}); 
-					next("end"); 
-					return; 
-				}
-				/*
-				// reparse the url now with url rewriting filters
-				query = url.parse(self.server.filter.apply(request.url), true);
-				docpath = query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/");
-				req.path = docpath; 
-				req.args = {}; 
-				Object.keys(query.query).map(function(k){req.args[k] = query.query[k];}); 
-				*/
-				
-					// get the page for current url because it's either a post or a get request
-					/*var pages = self.pool.get("res.page"); 
-					console.debug("Looking up page "+req.path+" language: "+req.language); 
-					pages.find({
-						path: req.path||"home",
-						language: req.language
-					}).done(function(p){
-						if(!p){
-							console.debug("No page found for path "+docpath+"..."); 
-							copyResponse({
-								code: 404,
-								data: "Not found!"
-							}); 
-							next("page"); 
-						} else {
-							page = p; 
-							next(); 
-						}
-					}); */
-					
-					next(); 
-			}, 
-			function(next){
-				var session = req.session; 
-				
-				if(request.method != "POST"){
-					next(); 
-					return; 
-				}
-				
-				var form = new formidable.IncomingForm();
-				form.parse(request, function(err, fields, files) {
-					req.args["files"] = files; 
-					
-					console.debug("POST FORM: "+docpath+" > "+JSON.stringify(fields)+" > "+JSON.stringify(files)); 
-					
-					Object.keys(fields).map(function(k){req.args[k] = fields[k]; });
-					next(); 
-				}); 
-			},  
-			function(next){
-				if(req.args["command"]){
-					var args = []; 
-					try { args = JSON.parse(req.args["args"]); } catch(e){}
-					console.debug("Running server command "+req.args["command"]); 
-					self.runCommand(req.args["command"], [req].concat(args)).done(function(result){
-						if(request.method == "POST"){
-							copyResponse({
-								data: result
-							}); 
-							next("end"); 
-						} else {
-							next(); 
-						}
-					}); 
-				} else {
-					next(); 
-				}
-			}, 
-			function(next){
-				var session = req.session; 
-				
-				console.log("GET: "+req.path); 
-				
-				req.args = query.query;
-				
-				if(req.path in self._routes){
-					self._routes[req.path](req, req.document).done(function(){
-						var root = fs.readFileSync(__dirname+"/html/root.html").toString(); 
-						var page = mustache.render(root, {
-							//title: title, 
-							content: req.document.html(),
-							console: ""//"[[console]]"
-						}); 
-						console.log("Sending back root.."); 
-						res.writeHead(200, {}); 
-						res.write(page); 
-						res.end(); 
-					}); 
-				} else {
-					res.writeHead(404, {}); 
-					res.write("Not found!"); 
+					console.debug("Route resolved successfully!"); 
 					res.end(); 
 				}
-				/*
-				req.args = query.query; 
-				with(req){
-					if(req.path in Server._pages){
-						page = Server._pages[req.path]; 
-						self.RenderWidget(page.template, req).done(function(result){
-							var title = mustache.render(page.title_template, req.meta); 
-							//(req.can("admin"))?"[[console]]":""); 
-							var html = mustache.render(fs.readFileSync(__dirname+"/html/root.html").toString(), {
-								title: title, 
-								content: result.html,
-								console: ""//"[[console]]"
-							}); 
-							copyResponse({
-								data: html
-							}); 
-							next(); 
-							
-						}, function(){
-							next(); 
-						}); 
-					} else {
-						next(); 
-					}
-				}*/
-			}
-		], function(err){
-			//console.debug("Writing response to client: "+JSON.stringify(resp.headers)); 
+			}); 
+		}, 
+		function(err){
 			res.writeHead(404, {}); 
+			res.write("The url was not found on this server!"); 
 			res.end(); 
-			
-			self.inprogress = false; 
-		}); 
-	} catch(e) { // prevent server crash
-		console.debug("FATAL ERROR WHEN SERVING CLIENT "+path+": "+e+"\n"+e.stack); 
-		res.writeHead(200, {}); 
-		res.write("Fatal server error occured. Please go to home page."); 
-		res.end(); 
-		self.inprogress = false; 
-	}
+		}
+	); 
 }
 
 Server.prototype.registerObjectFields = function(name, fields){
@@ -1216,8 +900,26 @@ Server.registerWidget({
 	html: fs.readFileSync(__dirname+"/html/root.html"),
 	client: ""
 }); 
+
+Server.loadPlugin = function(file){
+	if(!fs.existsSync(file)){
+		return; 
+	}
+	var sc = fs.readFileSync(file).toString(); 
 	
+	var context = Object.create(exports); 
+	Object.keys(global).map(function(key){context[key] = global[key];}); 
+	context.require = require; 
+	context.__dirname = Path.dirname(file); 
+	context.exports = {}; 
+	
+	// execute the script in the exports context
+	(new Function( "with(this) { " + sc + "}")).call(context);
+}
+
 exports.Server = Server; 
+exports.Client = Client; 
 exports.ServerObject = ServerObject; 
 exports.Widget = Widget; 
 exports.$ = $; 
+exports.mustache = mustache; 
