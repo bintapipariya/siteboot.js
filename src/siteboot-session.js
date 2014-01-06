@@ -145,7 +145,7 @@ Server.session = function(){
 				req.__ = i.__; 
 				
 				console.debug("Setting session sid cookie: "+session.sid); 
-				cookie = "session="+session.sid+"; path=/"; 
+				res.cookies["session"] = session.sid+"; path=/"; 
 			
 				session.save().done(function(){
 					next(); 

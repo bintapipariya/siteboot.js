@@ -91,7 +91,7 @@ Server.router = function(){
 				}); 
 				console.log("Sending back root.."); 
 				res.writeHead(200, {
-					"Set-Cookie": cookie
+					"Set-Cookie": Object.keys(res.cookies).map(function(x){return x+"="+res.cookies[x];}).reduce(function(a, b){return a+"\n"+b;}, "")
 				}); 
 				res.write(page); 
 				res.end(); 

@@ -401,6 +401,8 @@ Server.prototype.ClientRequest = function(request, res){
 		}
 	}
 	
+	res.cookies = {}; 
+	
 	async.eachSeries(this._middleware, 
 		function(func, next){
 			func.call(self, req, res, function(done){
