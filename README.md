@@ -3,30 +3,65 @@ FORTMAX SITEBOOT WEB OBJECTS
 
 Fortmax SiteBoot is a web development framework offering you a powerful way to develop javascript based web services. SiteBoot is like a game engine, and your site is like a game - except in the context of siteboot it is html that is sent to the user instead of graphical polygons being sent to the graphics card. 
 
-SiteBoot is written entirely in JavaScript and requires node js. 
+SiteBoot is written entirely in JavaScript and runs on node js. 
 
 	npm install siteboot
 	
+USAGE
+======
+
+Consider this example that is a complete server side control:
+
+	Server(function(){
+			$.fn.my_control = function(){
+					return this.each(function(){
+							$(this).html("<button>Get message</button>"); 
+					}); 
+			} 
+			Server.registerCommand({
+					name: "get-message",
+					method: function(req, res){
+							var ret = req.server.defer(); 
+							ret.resolve({message: "YAY! It's working!"}); 
+							return ret.promise; 
+					}
+			}); 
+	}); 
+
+	Client(function(){
+			$.fn.my_control = function(){
+					return this.each(function(){
+							var self = $(this); 
+							self.click(function(){
+									server.exec("get-message", []).done(function(data){
+											self.html(data.message); 
+									}); 
+									return false; 
+							}); 
+					}); 
+			}
+			$(document).ready(function(){
+					$(".my_control").my_control();
+			});
+	}); 
+	
+In this example above we create a control (server side jQuery!) then we define a command on the server, then we define a client side piece of code directly in the server JS file. This code will run on the client. Everything is done with jQuery both on the server and on the client.
+
 SERVICES PROVIDED BY SITEBOOT
 ===========
 
-* Automatic parsing and loading of all resources (ie you only write your classes, siteboot automatically loads them, makes your classes inherit from the right base types and sets up an interface that your plugins and apps can use - all this greatly reduces the amount of code that you need to write to get your app up and running). 
-* Powerful ORM to map objects to MySQL database. With siteboot you rarely will need to write any SQL code. Instead you will define higher level objects and siteboot will automatically keep the database structure up to date. 
-* Plugin architecture. SiteBoot plugin architecture makes it easy to write third party apps. Many SiteBoot core functions are implemented as plugins. Even your main application works like a plugin. 
-* Localization support - built in localisation support for most objects (by using properties), for html templates and within code. You can have several versions of the same object properties for each language and siteboot will automatically load the localized copy for the chosen language. 
+* Excellent tools provided for quick and simple module development (almost every single file is a standalone plugin. All files can be concatenated into one js file). 
+* Powerful ORM to map objects to MySQL database. With siteboot you rarely will need to write any SQL code. Instead you will define higher level objects and siteboot will automatically keep the database structure up to date. Use Server.registerObject() for this. 
+* Built in localization support - either through __("String") in server code, or with {{#__}}String{{/__}} in html templates. Even objects are localized. We use properties that are attached to every object. All properties are always loaded based on currently chosen language for the session. This allows for very easily implemented localization support. 
+* Powerful application development framework. It is very easy to develop new plugins for SiteBoot. 
 
 CREATING AN OBJECT
 ==========
 
-You will define your objects in the "objects" folder of your plugin. This is what your object may look like: 
+You will define your objects using Server.registerObject() method: 
 
-	function MyObject(){
-		
-	}
-
-	exports.model = {
-		constructor: MyObject,
-		name: "myobject.name",
+	Server.registerObject({
+		name: "myobject_name",
 		fields: {
 			id: {
 				type: "integer", 
@@ -37,7 +72,7 @@ You will define your objects in the "objects" folder of your plugin. This is wha
 			description: "text"
 		}, 
 		index: ["name"]
-	}
+	}); 
 
 The code above will go into a js file, like "myobject.js". When siteboot loads your site, it will parse this file and automatically create an sql table called "myobject_name" with the colums that you have specified. The markdown of the fields is the same as Sequelize uses, except that we define types as strings instead of referencing Sequelize types. 
 
@@ -45,8 +80,8 @@ If you supply "update: true" flag in your site config then siteboot will also up
 
 To access the above object within your application (or within a widget), you will use syntax that looks like this: 
 
-	var objects = self.server.pool.get("myobject.name"); 
-	objects.find({name: "foobar"}).done(function(obj){
+	var pool = req.server.object("myobject_name"); 
+	pool.find({name: "foobar"}).done(function(obj){
 		console.log(obj.description); 
 	}); 
 
@@ -65,98 +100,58 @@ To delete an object:
 HOW SITEBOOT MAKES IT WORK
 ========
 
-All objects get a variable inside them called "server" which points to a server interface object. This object then contains links to other services that your code will have access to. In fact, nearly every JS file that is loaded by siteboot such as widgets, plugins and objects will have the server variable set in it's "this" pointer. The definition of the server interface is found in lib/server_interface.js file in siteboot source. 
+On the server side, you have the "res.document" object that is attached to every response object. You can access this document using SiteBoot jQuery (siteboot.$). All siteboot plugins add methods and extend this siteboot jquery object. You have to load your plugins with Server.regsiterPlugin() method. 
 
-Siteboot loads your objects, html files, client code, widgets and other resources upon startup. When the user visits a url, siteboot first looks for the path in physical files that are available in "/content" folders in your plugins. If the file is not found, then siteboot looks in the pages table for the path to the page. If the page is found then Page.render() method is called for the template that is used for that particular page. 
+Then you define routes to your pages (like "/page/:page"). A route is a function that accepts two arguments: req and res. And has a third argument called "next": route(req, res). This method must return a promise. You write your response using res.write() or by modifying the res.document (provided by server.use(Server.dom) middleware). The final result is sent to the client. 
 
-When you define your page, you also create a page template js file with code that will run every time user visits that page. SiteBoot will automatically call the render() method and it will expect the render() method to return an object with fields that can be directly rendered using mustasche onto the html template that will have the same file name as the widget but with .html extension. 
+On the server you use jQuery to manipulate the dom. And there is a special method that you can define for objects called load(). This method should return a promise. This method will be called for each element that has it right before the route middleware sends the page to the client. Inside load() you can call async functions such as database access methods and construct the html for your control. 
 
-Each page is also considered to be a widget. So you can define your page template like this: 
+MIDDLEWARE
+==========
 
-	var Page = function(){
-		
-	}
+SiteBoot allows you to define middleware that will run for each request. You register a middleware like this: server.use(middleware); Middleware is a function with signature middleware(req, res, next); This allows for adding any number of extra functionality within plugins for siteboot. 
 
-	Page.prototype.post = function(req) {
-		var ret = this.server.defer(); 
-		var self = this; 
-		
-		self.super.post.call(self, req).done(function(){
-			ret.resolve(); 
-		}); 
-		
-		return ret.promise; 
-	}
-
-	Page.prototype.render = function(req){
-		var result = this.server.defer(); 
-		var self = this; 
-		
-		req.meta.page_title = self.object.properties.title; 
-		result.resolve({
-			
-		}); 
-		
-		return result.promise; 
-	}
-
-	exports.module = {
-		type: Page
-	}
-
-All methods that you write in your widget have to return a Q.promise(). In this case server.defer() method is the same as Q.defer() in node js. 
-
-The render method can then access your objects inside the database and prepare data for the html view. Inside the html view you will use tags like this: 
-
-	<h1>{{title}}</h1> 
-
-to render the fields of the object that is returned by the render method through the call to ret.resolve(). The syntax here is the same as mustache syntax. 
+Order of loading your files matters. Think carefully about file dependencies and load files in the right order. Usually all files are concatenated into one single js file that becomes your plugin or website code. 
 
 TEMPLATES
 ========
 
-All html templates in siteboot are written with mustache stateless syntax markup. However there is an extra syntax added which looks like this: 
+All templates in siteboot reside in separate HTML files. Usually in the "/html/" folder. When you define your server side jQuery function for your control, you can load the template using fs.readFileSync(__dirname+"/html/template.html") code. And then you assign the html to the control within jquery. After that you can do anything to this html using server side jQuery, like setting field values etc. 
 
-	[[blog:post path="/path/to/post"]]
-	
-This syntax is used to include a widget called "post" from the blog plugin and pass it an argument "path" that is set to the unique name of the post to display. The result of this syntax is that the page will show your post whereever you put this piece of code. 
+Mustache is no longer used, well almost - mustache is used for template localization simply because it's a very simple way to localize static strings within the templates. All mustache code is replaced after the whole page is rendered. 
 
-All siteboot syntax is evaluated AFTER mustache pass. So you can include this syntax even in your content data. 
+WIDGETS AND SERVER SIDE RENDER
+===========================
 
-WIDGETS
+You can do really cool things like insert widgets into your post content. Then in your client side code you replace the widget with jQuery and retreive a rendered version from the server using the "view-render <viewclass>" server command. You can run server commands just like command line in linux - and you always get a JSON object in return. 
+
+COMMANDS
 =======
 
-Widgets are user interface components that are embeddable into pages using the above syntax. A widget consists of: 
+SiteBoot client code usually communicates with the server through a predefined command line interface. On the server, widgets register commands. On the client the client code calls server.exec() to run an async command on the server. This is done with ajax. Standardized command access allows for fine grained access control to server resources. We can write a middleware that will act like a firewall and filter commands if user is not logged in. Pretty neat! 
 
-* widget.js file - contains code and goes into "widgets" folder. 
-* widget.html file - contains the view template and goes into "html" folder. 
-* widget.client.js - contains client code javascript and goes into "client" folder. 
-* widget.object.js - contains database object (if any) and goes into "objects" folder. 
-* widget.css - contains the stylesheets and goes into "css" folder. 
+On the client: 
 
-If you then call [[widget arg="foo"]] then your widgets render() method will be called with a "req" object that has a dictionary member called "args" that will contain the "arg" key set to "foo". So you can access your argument from within the render method using: 
+	server.exec("command", [args]).done(function(data){
+		// do things with the result of the command. 
+		alert(data.message); 
+	}); 
 
-	req.args["arg"] (== "foo")
-	
+Register a server side command on the server: 
+
+	Server.registerCommand({
+		name: "command", 
+		method: function(req, res){
+			var ret = req.server.defer(); 
+			ret.resolve({foo: "This is a message"}); 
+			return ret.promise; 
+		}
+	}); 
+
 WRITING PLUGINS
 ========
 
-Now you can put all of the above files into a separate working tree and place the whole tree into a folder under your "plugins" directory to make all the widgets in this working tree members of your new plugin. When you do this, you will now have to prefix all of your widgets with your plugin folder name when you want to include them: 
-
-	[[myplugin:widget]]
-	
-Plugins can contain their own client javascript, objects, widgets etc. All of these files will be loaded by siteboot and all client code and css will be compiled into one large file that will be sent to the client. 
-
-PUBLISHING PLUGINS
-==========
-
-SiteBoot has a module called "app" that implements interface for installing plugins from repositories. If you have the app module and console module installed then you can open up the server console in your web browser and type: 
-
-	app install blog
-	
-to install the blogging module. 
-
-Siteboot operates with git repositories for third party plugins. So all distribution and version control of plugins is done through public git repositories or through github. 
+You can extend the Server object in any way you like. Also the exported siteboot.$ jQuery object is available for adding jQuery methods. 
 
 CONTRIBUTING
 ========

@@ -7,9 +7,9 @@ function Widget(obj){
 	return this.super.constructor.call(this); 
 }
 
-exports.model = {
+Server.registerObject({
 	constructor: Widget,
-	name: "res.widget",
+	name: "res_widget",
 	fields: {
 		id: {
 			type: "integer",
@@ -25,4 +25,4 @@ exports.model = {
 		parent: "string", // name of widget that the widget is subclassed from
 		original_template: "string" // path to the original template
 	}
-}
+}); 

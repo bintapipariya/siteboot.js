@@ -11,7 +11,7 @@ Server.client = function(){
 			res.writeHead(200, {
 					"Content-type": "text/css"
 			}); 
-			res.write(this.client_style); 
+			res.write(Client.client_style); 
 			res.end(); 
 		} else {
 			next(); 

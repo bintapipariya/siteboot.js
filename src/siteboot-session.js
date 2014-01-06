@@ -147,7 +147,9 @@ Server.session = function(){
 				console.debug("Setting session sid cookie: "+session.sid); 
 				cookie = "session="+session.sid+"; path=/"; 
 			
-				next(); 
+				session.save().done(function(){
+					next(); 
+				}); 
 			}); 
 		}); 
 	}

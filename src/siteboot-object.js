@@ -51,7 +51,10 @@ Server(function(){
 
 	ServerObject.prototype.initInstance = function(opts){
 		var ret = this.server.defer(); 
+		var self = this; 
+		
 		this._loadProperties(opts).done(function(){
+			if(opts && opts.language) self.language = opts.language; 
 			ret.resolve(); 
 		}); 
 		
@@ -198,8 +201,8 @@ Server(function(){
 		var ret = this.server.defer(); 
 		if(this._object){
 			// TODO: check if the item was already changed by someone else 
-			console.debug("Writing attributes: "+Object.keys(this._write)); 
-			console.debug("Object: "+JSON.stringify(this._object.values)); 
+			//console.debug("Writing attributes: "+Object.keys(this._write)); 
+			//console.debug("Object: "+JSON.stringify(this._object.values)); 
 			this._object.save(Object.keys(this._write)).success(function(){
 				ret.resolve(); 
 			}).error(function(){
@@ -238,18 +241,39 @@ Server(function(){
 	}
 
 	// Used for for example setting form values
-	ServerObject.prototype.setValues = function(vals){
+	ServerObject.prototype.update = function(vals){
 		var ret = this.server.defer(); 
 		var self = this; 
 		
 		if(self._object && vals){
 			Object.keys(vals).map(function(k){
 				if(self._object && k in self._object.values){
-					console.debug("Setting key "+k); 
+					//console.debug("Setting key "+k); 
 					self[k] = vals[k]; 
 				}
 			}); 
-			ret.resolve(); 
+			self.save().done(function(){
+				var props = self.server.object("res_property"); 
+				async.eachSeries(Object.keys(vals.properties||{}), function(prop, next){
+					props.find({
+						object_type: self._object_name,
+						object_id: self.id,
+						name: prop,
+						language: self.language
+					}).done(function(o){
+						if(o){
+							o.value = vals.properties[prop]; 
+							o.save().done(function(){
+								next(); 
+							}); 
+						} else {
+							next(); 
+						}
+					}); 
+				}, function(){
+					ret.resolve(); 
+				}); 
+			}); 
 		} else {
 			ret.resolve(); 
 		}
@@ -262,5 +286,67 @@ Server(function(){
 		var self = this; 
 		Object.keys(self._object.values).map(function(x){obj[x] = self._object.values[x]});
 		return obj; 
+	}
+}); 
+
+/** 
+ * GET object by id. 
+ * Arguments: <object_type> <object_id>
+ * Returns: JSON representation of object
+ **/
+ 
+Server.registerCommand({
+	name: "object-get", 
+	method: function(req, res, type, id){
+		var ret = req.server.defer(); 
+		
+		if(type && id){
+			var posts = req.server.object(type); 
+			posts.find({id: id, language: req.language}).done(function(p){
+				if(!p){
+					ret.resolve({error: "Object with id "+args[1]+" not found!"}); 
+				} else {
+					var obj = Object.create(p._object.values); 
+					obj.properties = p.properties; 
+					ret.resolve(obj); 
+				}
+			}); 
+		} else {
+			ret.resolve({error: "Wrong number of arguments to command"}); 
+		}
+		
+		return ret.promise; 
+	}
+}); 
+
+/**
+ * UPDATE object by id
+ * Arguments: <object_type> <OBJECT> 
+ * Return: {success|error}
+ * Note: OBJECT must be a json representation of the object
+ **/
+ 
+Server.registerCommand({
+	name: "object-update", 
+	method: function(req, res, type, data){
+		var ret = req.server.defer(); 
+		
+		if(type && data){
+			var pool = req.server.object(type); 
+			pool.find({id: data.id, language: req.language}).done(function(p){
+				if(p){
+					//console.debug("Will update object with id: "+p.id); 
+					p.update(data).done(function(){
+						ret.resolve({success: "Successfully updated object id "+data.id}); 
+					}); 
+				} else {
+					ret.resolve({error: "Object id "+data.id+" not found!"}); 
+				}
+			}); 
+		} else {
+			ret.resolve({error: "Wrong arguments. Expecting [type, data]"}); 
+		}
+		
+		return ret.promise; 
 	}
 }); 

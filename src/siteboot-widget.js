@@ -148,3 +148,59 @@ $.fn.weld = function(data){
 	}); 
 	return ret.promise(); 
 }
+
+Server.registerCommand({
+	name: "view-render",
+	method: function(req, res, type){
+		var ret = req.server.defer(); 
+		var elem = $("<html>"); 
+		if(type in $.fn && (typeof $.fn[type]) == "function"){
+			$.fn[type].call(elem); 
+			if(elem.load && (typeof elem.load) == "function"){
+				var result = elem.load(req, res);
+				if("done" in result){
+					result.done(function(){
+						done(); 
+					}); 
+				} else {
+					done(); 
+				}
+			} else {
+				done(); 
+			}
+		} else {
+			ret.resolve({error: "Unknown type of element ("+type+")"}); 
+		}
+		function done(){
+			var html = mustache.render(elem.html(), {
+				"__": function(){
+					return function(text){
+						return req.__(text); 
+					}
+				}
+			}); 
+			ret.resolve({html: html}); 
+		}
+		return ret.promise; 
+	}
+}); 
+
+Client(function(){
+	$.fn.view_client_render = function(){
+		return this.each(function(){
+			var self = $(this); 
+			var type = self.attr("data-client-render"); 
+			server.exec("view-render", [type]).done(function(data){
+				self.html(data.html);
+				if(type in $.fn){
+					$.fn[type].call(self); 
+				}
+			}); 
+		}); 
+	}
+	$(document).ready(function(){
+		$("[data-client-render]").each(function(){
+			$(this).view_client_render(); 
+		}); 
+	}); 
+}); 

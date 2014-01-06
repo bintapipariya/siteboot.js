@@ -26,16 +26,16 @@ Server.router = function(){
 			
 			var groups = []; 
 			var args = {}; 
-			var rx = key.replace(/\:(\w+)/g, function(match, name){
+			var rx = "^"+key.replace(/\:(\w+)/g, function(match, name){
 				groups.push(name); 
 				return "([^/]+)"; 
-			}); 
+			})+"$"; 
 			//rx = rx.replace(/\//g, "\\/"); 
-			console.log("Resolve route: "+path+", will use regex: "+rx+": "+path.search(rx)+": "+groups); 
+			//console.log("Resolve route: "+path+", will use regex: "+rx+": "+path.search(rx)+": "+groups); 
 			rx = new RegExp(rx, "g"); 
 			var matches = rx.exec(path); 
 			if(matches){
-				console.log("Matches: "+JSON.stringify(matches)); 
+				//console.log("Matches: "+JSON.stringify(matches)); 
 				var params = {}; 
 				var pc = 1; 
 				groups.map(function(x){req.args[x] = matches[pc++];}); 
@@ -60,6 +60,11 @@ Server.router = function(){
 
 		console.log("GET: "+req.path); 
 		
+		res.meta = {
+			title_template: "{{title}}",
+			title: ""
+		}; 
+		
 		RunRoute(req, res).done(function(){
 			var queue = []; 
 			$(req.document).find("*").each(function(i, e){
@@ -69,14 +74,13 @@ Server.router = function(){
 			}); 
 			
 			async.eachSeries(queue, function(e, next){
-				console.log("Calling load.."); 
-				e.load(req).done(function(){
+				e.load(req, res).done(function(){
 					next();
 				}); 
 			}, function(){
 				var root = fs.readFileSync(__dirname+"/html/root.html").toString(); 
 				var page = mustache.render(root, {
-					//title: title, 
+					title: mustache.render(res.meta.title_template, res.meta), 
 					content: mustache.render(req.document.body.innerHTML, {
 						"__": function(){
 							return function(text){

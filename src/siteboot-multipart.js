@@ -1,6 +1,6 @@
 
 Server.multipart = function(){
-	var formiddable = require("formidable"); 
+	var formidable = require("formidable"); 
 	
 	return function(req, res, next){
 		if(req.method != "POST"){
@@ -9,7 +9,7 @@ Server.multipart = function(){
 		}
 		
 		var form = new formidable.IncomingForm();
-		form.parse(request, function(err, fields, files) {
+		form.parse(req._request, function(err, fields, files) {
 			req.post = {
 				files: files, 
 				fields: fields

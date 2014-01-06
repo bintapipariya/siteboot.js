@@ -106,8 +106,39 @@ Server.prototype.ready = function(cb){
 var Client = function(code){
 	if(!Client.client_code) Client.client_code = ""; 
 	if((typeof code) == "function"){
-		Client.client_code += 
-			"$(document).ready("+code.toString()+");\n";
+		Client.client_code += ";("+code.toString()+")();\n";
+	} else if(code){
+		Client.client_code += code.toString(); 
+	}
+}
+
+Client.css = function(code){
+	code = code + ""; 
+	if(!Client.client_style) Client.client_style = ""; 
+	if(code && code.length < 256 && fs.existsSync(code)){
+		Client.client_style += fs.readFileSync(code)+""; 
+	} else if (code){
+		Client.client_style += code.toString(); 
+	}
+}
+
+Client.script = function(code){
+	if(!Client.client_code) Client.client_code = ""; 
+	if(code && code.toString().length < 256 && fs.existsSync(code)){
+		Client.client_code += fs.readFileSync(code); 
+	} else if((typeof code) == "function" || (typeof code) == "string"){
+		Client.client_code += code.toString()+"\n";
+	}
+}
+
+Client.ready = function(code){
+	if(!Client.client_code) Client.client_code = ""; 
+	if(code && code.toString().length < 256 && fs.existsSync(code)){
+		Client.client_code += "$(document).ready(function(){"+fs.readFileSync(code)+"});\n"; 
+	} else if((typeof code) == "function"){
+		Client.client_code += "$(document).ready("+code.toString()+");\n";
+	} else {
+		Client.client_code += "$(document).ready(function(){"+code.toString()+"});\n"; 
 	}
 }
 
@@ -162,6 +193,7 @@ Server.prototype.shutdown = function(){
 	this.http.close(); 
 }
 
+		
 Server.prototype.init = function(config){
 	var self = this; 
 	var ret = Q.defer(); 
@@ -250,8 +282,6 @@ Server.prototype.init = function(config){
 		}); 
 	}, function(){
 		self.vfs.add_index(__dirname+"/content"); 
-		self.registerClientScript(__dirname+"/siteboot-client.js"); 
-		self.registerStyle(__dirname+"/siteboot.css"); 
 		
 		self.StartServer(); 
 		server_started = true; 
@@ -287,27 +317,6 @@ Server.registerPage = function(opts){
 Server.prototype.registerClientScript = function(path){
 	if(fs.existsSync(path)){
 		Client.client_code = fs.readFileSync(path).toString() + Client.client_code; 
-	}
-}
-
-Server.prototype.registerStyle = function(path){
-	if(fs.existsSync(path)){
-		this.client_style += fs.readFileSync(path); 
-	}
-}
-
-Server.registerCommand = function(command, func){
-	var type = Object.prototype.toString.call(command); 
-	if(type == "[object String]"){
-		if(!command || !func) throw Error("Must supply command and func argument!"); 
-	
-		Server._commands[command] = {
-			name: command, 
-			method: func
-		}
-	} else if(type == "[object Object]"){
-		if(!command.name || !command.method) throw Error("Must specify name and method when registering a command!"); 
-		Server._commands[command.name] = command; 
 	}
 }
 
@@ -368,7 +377,7 @@ Server.prototype.ClientRequest = function(request, res){
 		path: "/"+query.pathname.replace(/\/+$/, "").replace(/^\/+/, "").replace(/\/+/g, "/"), 
 		args: query.query,
 		meta: {}, 
-		method: query.method, 
+		method: request.method, 
 		cookies: parseCookieString(request.headers.cookie),
 		server: this, 
 		_request: request, 
@@ -916,6 +925,10 @@ Server.loadPlugin = function(file){
 	// execute the script in the exports context
 	(new Function( "with(this) { " + sc + "}")).call(context);
 }
+
+
+Client.script(__dirname+"/siteboot-client.js"); 
+Client.css(__dirname+"/siteboot.css"); 
 
 exports.Server = Server; 
 exports.Client = Client; 
