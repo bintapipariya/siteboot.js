@@ -103,4 +103,84 @@ Server(function(){
 		},
 		index: ["username"]
 	}); 
+	
+		
+	Server.registerCommand({
+		name: "user-login", 
+		help: __("Login user"),
+		arguments: {
+			username: __("Your login name"), 
+			password: __("Your password")
+		}, 
+		method: function(req, res, username, pass){
+			var user = req.server.object("res_user"); 
+			var ret = req.server.defer();
+			
+			user.login({
+				username: username||"guest", 
+				password: pass||"", 
+				session: req.session
+			}).done(function(success){
+				if(success) 
+					ret.resolve({success: "User successfully logged in!"}); 
+				else 
+					ret.resolve({error: "Wrong username or password!"});
+			}, function(err){
+				ret.resolve({error: "Login failed: "+err}); 
+			}); 
+			return ret.promise; 
+		}
+	}); 
+
+	Server.registerCommand({
+		name: "user-register", 
+		help: __("Register a new account"), 
+		method: function(req, res){
+			var user = req.server.object("res_user");
+			user.create({
+				username: (req.args["email"])?req.args.email.replace("[@\.]", "_"):"",
+				email: req.args["email"],
+				first_name: req.args["first_name"], 
+				last_name: req.args["last_name"], 
+				role: "admin", 
+				hash: crypto.createHash("sha1").update(req.args["password"]).digest('hex')||""
+			}).done(function(u){
+				if(!u){
+					ret.data = JSON.stringify({error: "Could not create user!"});
+					result.resolve(ret); 
+					return; 
+				}
+				
+				console.debug("Created new user "+req.args["username"]); 
+				user.login({
+					username: u.username, 
+					password: req.args["password"], 
+					session: req.session
+				}).done(function(success){
+					ret.data = JSON.stringify({success: "User successfully registered!"});
+					result.resolve(ret); 
+				}); 
+			}, function(err){
+				console.error("Could not create new user!"); 
+				ret.data = JSON.stringify({error: err});
+				result.resolve(ret); 
+			});  
+		}
+	}); 
+
+	Server.registerCommand({
+		name: "whoami",
+		help: __("Show information about currently logged in user."),
+		method: function(req, res){
+			var ret = req.server.defer(); 
+			
+			ret.resolve({
+				success: (req.session && req.session.user)?req.session.user.username:""
+			}); 
+			
+			ret.resolve(); 
+			return ret.promise; 
+		}
+	}); 
+
 }); 
